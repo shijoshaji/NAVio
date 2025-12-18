@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: navio-backend
+    ports:
+      - "8002:8002"
+    volumes:
+      # Mount database file to persist data between local and container
+      - ../backend/mf_tracker.db:/app/mf_tracker.db
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - navio
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: navio-frontend
+    ports:
+      - "5174:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - navio
+
+networks:
+  navio:
+    driver: bridge

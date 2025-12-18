@@ -1,0 +1,38 @@
+# Mutual Fund Tracker - Task List
+
+
+# Dependencies
+/node_modules
+/vendor
+/venv
+.venv
+
+# Build artifacts
+/build
+/dist
+/target
+/out
+
+# IDE and OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+*.swo
+
+# Environment variables
+.env
+.env.*
+
+# cache files
+.cache
+__pycache__
+
