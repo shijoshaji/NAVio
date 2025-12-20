@@ -90,9 +90,11 @@ def get_portfolio_summary(db: Session):
 def add_to_watchlist(db: Session, scheme_code: str, group_id: int = None, target_nav: float = None, units: float = 0.0, invested_amount: float = 0.0):
     """Adds a scheme to the watchlist with optional group and details."""
     # Check if already in watchlist WITH THE SAME GROUP (allow same fund in different groups)
+    # ONLY check for ACTIVE items. If an item is SOLD, we allow adding a new ACTIVE one.
     existing = db.query(Watchlist).filter(
         Watchlist.scheme_code == scheme_code,
-        Watchlist.group_id == group_id
+        Watchlist.group_id == group_id,
+        Watchlist.is_sold == False
     ).first()
     
     if existing:
