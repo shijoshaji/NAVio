@@ -17,6 +17,11 @@ echo [✓] Docker Desktop is running
 echo.
 
 REM Build and start containers
+echo Checking database initialization...
+if not exist "..\backend\mf_tracker.db" (
+    echo [INFO] Creating empty database file for volume mount...
+    type nul > "..\backend\mf_tracker.db"
+)
 echo Starting Auto-Backup Job...
 start "ShijoBackup" "..\localrun\navio_start_backup_job.bat"
 
