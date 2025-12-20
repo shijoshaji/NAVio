@@ -39,7 +39,7 @@
 
 ## About
 
-“NAViō (“NAV-eoh” 🔊)  is part of the FōX̂iИ Suite (“fox-een” 🔊)  — a family of intelligent finance apps ([NAViō](https://github.com/shijoshaji/NAVio), [IneX̂ō](https://bio.link/shijoshaji), [FiИōra](https://bio.link/shijoshaji)) built to help you track, analyze, and optimize your financial journey with clarity and confidence.
+“NAViō (“NAV-eoh” 🔊)  is part of the FōX̂iИ Suite (“fox-een” 🔊)  — a family of intelligent finance apps ([NAViō](https://github.com/shijoshaji/NAVio), [IneX̂ō](https://github.com/shijoshaji/IneXo), [FiИōra](https://bio.link/shijoshaji)) built to help you track, analyze, and optimize your financial journey with clarity and confidence.
 
 NAViō is a self-hosted, privacy-focused mutual fund tracking application designed for the Indian market. It syncs directly with AMFI for NAV data and provides advanced analytics for SIPs, Lumpsums, and entry-timing strategies.
 
