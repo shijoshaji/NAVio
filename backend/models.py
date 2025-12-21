@@ -8,6 +8,8 @@ class Scheme(Base):
 
     scheme_code = Column(String, primary_key=True, index=True)
     scheme_name = Column(String)
+    category = Column(String, nullable=True)
+    fund_house = Column(String, nullable=True)
     isin_div_payout = Column(String, nullable=True)
     isin_div_reinvestment = Column(String, nullable=True)
     net_asset_value = Column(Float)

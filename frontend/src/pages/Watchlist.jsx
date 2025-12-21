@@ -909,9 +909,13 @@ const Watchlist = () => {
                                             <Trash2 className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
-                                    {/* Header */}
-                                    <div className="flex items-center gap-2 mb-4 w-11/12">
+                                    <div className="flex items-center gap-2 mb-4 w-11/12 flex-wrap">
                                         <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-400 uppercase tracking-wide">{item.group_name}</span>
+                                        {item.category && (
+                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-blue-400 uppercase tracking-wide truncate max-w-[200px]" title={item.category}>
+                                                {item.category.includes('(') ? item.category.split('(')[1].split(')')[0] : item.category}
+                                            </span>
+                                        )}
                                         <h4 className={`font-semibold text-base line-clamp-1 ${isPastTargetHit ? 'text-emerald-400' : 'text-slate-200'}`} title={item.scheme_name}>{item.scheme_name}</h4>
                                     </div>
 

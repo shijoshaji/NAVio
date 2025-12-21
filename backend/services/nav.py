@@ -36,10 +36,23 @@ def parse_and_sync_nav_data(db: Session, data: str):
     
     lines = data.split('\n')
     count = 0
+    current_category = None
     
     for line in lines:
         if not line or ";" not in line:
-            continue
+            # Potentially a category header if it's not empty/malformed
+            # AMFI format usually has category headers like "Open Ended Schemes ( Equity Scheme - Large Cap Fund )"
+            # These lines don't have semicolons usually? Let's check format.
+            # Actually AMFI headers are just text lines.
+            if line and line.strip() and ";" not in line:
+                # AMFI file structure:
+                # 1. Category Header: "Open Ended Schemes ( Equity Scheme - Large Cap Fund )" -> Contains brackets
+                # 2. AMC Header: "Aditya Birla Sun Life Mutual Fund" -> No brackets
+                candidate = line.strip()
+                if "(" in candidate and ")" in candidate:
+                    current_category = candidate
+                # Else it's likely an AMC header, ignore it for 'category' field
+                continue
             
         parts = line.split(';')
         if len(parts) < 6:
@@ -47,7 +60,10 @@ def parse_and_sync_nav_data(db: Session, data: str):
             
         # Check if it's the header or a category line
         if not parts[0].isdigit():
-            continue
+             # Sometimes the category header might be inside the loop if previous check failed?
+             # But usually if it has no semicolon it's caught above.
+             # If it has semicolon but first part is not digit, it might be table header "Scheme Code;..."
+             continue
 
         try:
             scheme_code = parts[0].strip()
@@ -74,6 +90,7 @@ def parse_and_sync_nav_data(db: Session, data: str):
                 scheme = Scheme(
                     scheme_code=scheme_code,
                     scheme_name=scheme_name,
+                    category=current_category, # New Field
                     isin_div_payout=isin_growth,
                     isin_div_reinvestment=isin_reinvest,
                     net_asset_value=net_asset_value,
@@ -85,6 +102,8 @@ def parse_and_sync_nav_data(db: Session, data: str):
                 scheme.net_asset_value = net_asset_value
                 scheme.date = date_obj
                 scheme.last_updated = datetime.now().date()
+                if current_category:
+                     scheme.category = current_category # Update category if available
             
             # Upsert logic for NAV History (Only Active Schemes)
             if scheme_code in active_schemes:
@@ -121,8 +140,18 @@ def parse_and_sync_nav_data(db: Session, data: str):
             backfill_scheme_history(db, code)
         except Exception as e:
             logger.error(f"Failed to backfill history for {code}: {e}")
-            
-    return count
+
+    # 7. Sync Metadata (Category/Fund House) from MFAPI
+    try:
+        updated_meta = fetch_and_update_scheme_metadata(db)
+        logger.info(f"Metadata sync finished: {updated_meta} schemes updated.")
+    except Exception as e:
+        logger.error(f"Metadata sync failed: {e}")
+
+    return {
+        "status": "success", 
+        "message": f"Processed {count} records. updated_meta"
+    }
 
 def fetch_scheme_history_api(scheme_code: str):
     """Fetches historical NAV data from mfapi.in"""
@@ -228,3 +257,59 @@ def backfill_scheme_history(db: Session, scheme_code: str):
         db.bulk_save_objects(new_rows)
         db.commit()
         logger.info(f"Backfilled {len(new_rows)} days of history for {scheme_code}")
+
+def fetch_and_update_scheme_metadata(db: Session):
+    """
+    Fetches scheme metadata (category, fund house) from MFAPI.in for all active schemes
+    and updates the database.
+    """
+    import requests
+    from models import Investment, Watchlist, Scheme
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    # 1. Get Active Schemes (Present in Portfolio or Watchlist)
+    active_schemes = set()
+    
+    investments = db.query(Investment.scheme_code).distinct().all()
+    for (code,) in investments:
+        active_schemes.add(code)
+        
+    watchlist = db.query(Watchlist.scheme_code).distinct().all()
+    for (code,) in watchlist:
+        active_schemes.add(code)
+        
+    logger.info(f"Fetching metadata for {len(active_schemes)} active schemes from MFAPI...")
+    
+    count = 0
+    updated_count = 0
+    for code in active_schemes:
+        try:
+            url = f"https://api.mfapi.in/mf/{code}"
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                meta = data.get("meta", {})
+                fund_house = meta.get("fund_house")
+                
+                if category or fund_house:
+                    scheme = db.query(Scheme).filter(Scheme.scheme_code == str(code)).first()
+                    if scheme:
+                        changed = False
+                        if category and scheme.category != category:
+                            scheme.category = category
+                            changed = True
+                        if fund_house and scheme.fund_house != fund_house:
+                            scheme.fund_house = fund_house
+                            changed = True
+                        
+                        if changed:
+                            updated_count += 1
+            count += 1
+        except Exception as e:
+            logger.error(f"Failed to fetch metadata for {code}: {e}")
+            
+    db.commit()
+    logger.info(f"Metadata update complete. Updated {updated_count} schemes.")
+    return updated_count

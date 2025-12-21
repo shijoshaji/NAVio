@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, TrendingUp, PiggyBank, List, Menu, X } from 'lucide-react';
+import { LayoutDashboard, TrendingUp, PiggyBank, List, Menu, X, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
 import navioLogo from '../assets/logo-navio-banner.png';
 import navioicon from '../assets/icon.png';
 import { useState, useEffect } from 'react';
@@ -14,13 +14,15 @@ function cn(...inputs) {
 
 const Layout = ({ children }) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [isCollapsed, setIsCollapsed] = useState(false);
     const location = useLocation();
 
     const navigation = [
         { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+        { name: 'Holdings', href: '/holdings', icon: List },
         { name: 'SIP Tracker', href: '/sip', icon: TrendingUp },
         { name: 'Lumpsum', href: '/lumpsum', icon: PiggyBank },
-        { name: 'Watchlist', href: '/watchlist', icon: List },
+        { name: 'Watchlist', href: '/watchlist', icon: Eye },
     ];
 
     useEffect(() => {
@@ -75,30 +77,46 @@ const Layout = ({ children }) => {
                     },
                 },
             }} />
+
             {/* Sidebar */}
             <aside
                 className={cn(
-                    "fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 border-r border-slate-800 transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0 flex flex-col",
-                    !isSidebarOpen && "-translate-x-full lg:hidden"
+                    "fixed inset-y-0 left-0 z-50 bg-slate-900 border-r border-slate-800 transition-all duration-300 ease-in-out flex flex-col",
+                    isCollapsed ? "w-20" : "w-64",
+                    !isSidebarOpen && "-translate-x-full lg:translate-x-0",
+                    "lg:relative"
                 )}
             >
-                <div className="h-16 flex items-center justify-between px-4 border-b border-slate-800">
-                    <div>
+                {/* Header with Toggle */}
+                <div className={cn(
+                    "h-16 flex items-center border-b border-slate-800 relative",
+                    isCollapsed ? "justify-center px-0" : "justify-between px-4"
+                )}>
+                    <div className={cn("transition-opacity duration-300", isCollapsed ? "opacity-0 hidden" : "opacity-100")}>
                         <div className="text-xl font-bold text-blue-500 flex items-center gap-2">
-                            <img src={navioLogo} alt="NAViō Logo" className="h-16 w-auto object-contain" />
-                            {/* <span>NAViō</span> */}
+                            <img src={navioLogo} alt="NAViō Logo" className="h-10 w-auto object-contain" />
                         </div>
-                        {/* <p className="text-[10px] text-slate-500 mt-0.5 tracking-wider">Track.Analyze.Optimize</p> */}
                     </div>
+                    {/* Collapsed Icon Mode */}
+                    {isCollapsed && (
+                        <img src={navioicon} alt="NAViō" className="h-8 w-8 object-contain" />
+                    )}
+
+                    {/* Mobile Close Button */}
                     <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400 hover:text-slate-200">
                         <X className="h-6 w-6" />
                     </button>
+
+                    {/* Desktop Collapse Toggle */}
+                    <button
+                        onClick={() => setIsCollapsed(!isCollapsed)}
+                        className="hidden lg:flex absolute -right-3 top-1/2 -translate-y-1/2 bg-slate-800 border border-slate-700 text-slate-400 rounded-full p-1 hover:text-white hover:bg-slate-700 transition-colors shadow-sm"
+                    >
+                        {isCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
+                    </button>
                 </div>
-                {/* <br /> */}
 
-
-
-                <nav className="flex-1 overflow-y-auto p-4 space-y-2">
+                <nav className="flex-1 overflow-y-auto p-3 space-y-2">
                     {navigation.map((item) => {
                         const Icon = item.icon;
                         const isActive = location.pathname === item.href;
@@ -107,31 +125,44 @@ const Layout = ({ children }) => {
                                 key={item.name}
                                 to={item.href}
                                 className={cn(
-                                    "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                                    "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all group relative",
                                     isActive
                                         ? "bg-blue-600 text-white"
-                                        : "hover:bg-slate-800 text-slate-400 hover:text-slate-200"
+                                        : "hover:bg-slate-800 text-slate-400 hover:text-slate-200",
+                                    isCollapsed && "justify-center px-2"
                                 )}
+                                title={isCollapsed ? item.name : ''}
                             >
-                                <Icon className="h-4 w-4" />
-                                {item.name}
+                                <Icon className={cn("shrink-0", isCollapsed ? "h-6 w-6" : "h-5 w-5")} />
+                                {!isCollapsed && <span className="truncate">{item.name}</span>}
+
+                                {/* Tooltip for Collapsed State */}
+                                {isCollapsed && (
+                                    <div className="absolute left-full ml-2 px-2 py-1 bg-slate-800 text-slate-200 text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50 border border-slate-700 shadow-lg">
+                                        {item.name}
+                                    </div>
+                                )}
                             </Link>
                         );
                     })}
                 </nav>
 
-                <div className="p-4 border-t border-slate-800 shrink-0">
-                    <p className="text-xs text-slate-500">
-                        🎯 App created by{' '}
-                        <a
-                            href="https://bio.link/shijoshaji"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-cyan-400 hover:text-cyan-300 transition-colors"
-                        >
-                            Shijo Shaji
-                        </a>
-                    </p>
+                <div className={cn("p-4 border-t border-slate-800 shrink-0", isCollapsed && "flex justify-center")}>
+                    {!isCollapsed ? (
+                        <p className="text-xs text-slate-500">
+                            🎯 App created by{' '}
+                            <a
+                                href="https://bio.link/shijoshaji"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-cyan-400 hover:text-cyan-300 transition-colors"
+                            >
+                                Shijo Shaji
+                            </a>
+                        </p>
+                    ) : (
+                        <span className="text-xs text-slate-600 font-bold">©</span>
+                    )}
                 </div>
             </aside>
 
@@ -142,6 +173,7 @@ const Layout = ({ children }) => {
                     <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-400 hover:text-slate-200">
                         <Menu className="h-6 w-6" />
                     </button>
+                    <span className="ml-4 font-semibold text-slate-200">NAViō</span>
                 </div>
 
                 <div className="flex-1 overflow-auto p-4 lg:p-8">

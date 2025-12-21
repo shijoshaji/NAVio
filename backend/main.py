@@ -8,11 +8,29 @@ from services.nav import fetch_nav_data, parse_and_sync_nav_data
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
+# Auto-migration for fund_house column
+try:
+    from sqlalchemy import inspect, text
+    inspector = inspect(engine)
+    if 'schemes' in inspector.get_table_names():
+        columns = [c['name'] for c in inspector.get_columns('schemes')]
+        if 'fund_house' not in columns:
+            print("Migrating DB: Adding fund_house column...")
+            with engine.connect() as connection:
+                connection.execute(text("ALTER TABLE schemes ADD COLUMN fund_house VARCHAR"))
+                try:
+                    connection.commit()
+                except:
+                    pass # Some drivers auto-commit or don't support it on DDL
+            print("Migration complete.")
+except Exception as e:
+    print(f"Migration check failed: {e}")
+
 app = FastAPI(title="Mutual Fund Tracker")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # For dev, allow all. In prod, specify frontend URL.
+    allow_origins=["http://localhost:5173", "http://localhost:5174"], # Explicitly allow frontend ports
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -120,9 +138,9 @@ def delete_watchlist_group(group_id: int, db: Session = Depends(get_db)):
     return {"message": "Group deleted successfully"}
 
 @app.get("/api/portfolio")
-def get_portfolio(db: Session = Depends(get_db)):
+def get_portfolio(type: Optional[str] = None, db: Session = Depends(get_db)):
     """Get portfolio summary with current valuation"""
-    return portfolio.get_portfolio_summary(db)
+    return portfolio.get_portfolio_summary(db, filter_type=type)
 
 @app.post("/api/investments")
 def add_investment(investment: InvestmentBase, db: Session = Depends(get_db)):

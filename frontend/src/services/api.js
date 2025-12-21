@@ -23,7 +23,7 @@ const api = axios.create({
     baseURL: getApiBaseUrl(),
 });
 
-export const getPortfolio = () => api.get('/portfolio');
+export const getPortfolio = (type) => api.get('/portfolio', { params: { type } });
 export const getInvestments = (type) => api.get('/investments', { params: { type } });
 export const addInvestment = (data) => api.post('/investments', data);
 export const deleteInvestment = (id) => api.delete(`/investments/${id}`);

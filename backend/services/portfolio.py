@@ -43,48 +43,166 @@ def add_investment(db: Session, scheme_code: str, invest_type: str, amount: floa
     db.refresh(new_investment)
     return new_investment
 
-def get_portfolio_summary(db: Session):
+def calculate_xirr(transactions):
     """
-    Returns the portfolio with current valuation.
+    Calculates XIRR using Newton-Raphson method.
+    transactions: list of (date, amount) tuples.
+                  amount < 0 for investments, amount > 0 for redemptions/current value.
     """
-    portfolio_items = db.query(Portfolio).all()
-    summary = []
+    if not transactions:
+        return 0.0
+        
+    # Sort by date
+    transactions.sort(key=lambda x: x[0])
     
+    # Check bounds (must have at least one positive and one negative)
+    amounts = [t[1] for t in transactions]
+    if all(a >= 0 for a in amounts) or all(a <= 0 for a in amounts):
+        return 0.0
+
+    start_date = transactions[0][0]
+
+    def xnpv(rate):
+        if rate <= -1.0: # Prevent division by zero or complex numbers
+            return float('inf')
+        val = 0.0
+        for d, a in transactions:
+            days = (d - start_date).days
+            val += a / pow(1 + rate, days / 365.0)
+        return val
+
+    def xnpv_prime(rate):
+        if rate <= -1.0:
+            return float('inf')
+        val = 0.0
+        for d, a in transactions:
+            days = (d - start_date).days
+            if days == 0: continue
+            term = days / 365.0
+            val -= term * a / pow(1 + rate, term + 1)
+        return val
+
+    # Newton-Raphson
+    rate = 0.1 # Initial guess 10%
+    for _ in range(50):
+        try:
+            f_val = xnpv(rate)
+            if abs(f_val) < 1e-5:
+                # Converged
+                return rate * 100
+            
+            df_val = xnpv_prime(rate)
+            if df_val == 0: 
+                break
+                
+            new_rate = rate - f_val / df_val
+            if abs(new_rate - rate) < 1e-6:
+                return new_rate * 100
+            rate = new_rate
+        except (ZeroDivisionError, OverflowError):
+            break
+            
+    return 0.0
+
+def get_portfolio_summary(db: Session, filter_type: str = None):
+    """
+    Returns the portfolio with current valuation and XIRR.
+    Supports filtering by 'SIP' or 'LUMPSUM'.
+    """
+    # 1. Fetch Investments (Filtered)
+    query = db.query(Investment)
+    if filter_type and filter_type.lower() != 'all':
+        # exact match for 'SIP' or 'LUMPSUM' (case sensitive in DB usually)
+        # Assuming frontend sends 'SIP' or 'LUMPSUM'
+        query = query.filter(Investment.type == filter_type)
+    
+    investments = query.all()
+    
+    # 2. Group by Scheme
+    inv_map = {}
+    scheme_codes = set()
+    
+    for inv in investments:
+        if inv.scheme_code not in inv_map:
+            inv_map[inv.scheme_code] = []
+        inv_map[inv.scheme_code].append(inv)
+        scheme_codes.add(inv.scheme_code)
+        
+    # 3. Fetch Schemes Details
+    schemes = db.query(Scheme).filter(Scheme.scheme_code.in_(scheme_codes)).all()
+    scheme_map = {s.scheme_code: s for s in schemes}
+
+    summary = []
     total_invested = 0
     total_current_value = 0
+    global_cashflows = []
     
-    for item in portfolio_items:
-        # Skip items with negligible units (effectively sold out)
-        if item.total_units <= 0.0001:
-            continue
-
-        current_nav = item.scheme.net_asset_value
-        current_value = item.total_units * current_nav
+    for scheme_code, raw_txns in inv_map.items():
+        scheme = scheme_map.get(scheme_code)
+        if not scheme: continue 
         
-        # Calculate XIRR/Returns could go here in future
-        abs_return = current_value - item.invested_amount
-        return_pct = (abs_return / item.invested_amount) * 100 if item.invested_amount > 0 else 0
+        # Aggregate logic
+        curr_units = sum(i.units for i in raw_txns)
+        
+        # Skip if units are zero (sold out completely in this view)
+        if curr_units <= 0.0001:
+            continue
+            
+        curr_invested = sum(i.amount for i in raw_txns)
+        
+        # Average NAV
+        avg_nav = curr_invested / curr_units if curr_units > 0 else 0
+        
+        # Current Value
+        current_nav = scheme.net_asset_value
+        current_val = curr_units * current_nav
+        
+        # XIRR Calculation
+        scheme_txns = []
+        for inv in raw_txns:
+            scheme_txns.append((inv.purchase_date, -inv.amount))
+            global_cashflows.append((inv.purchase_date, -inv.amount))
+            
+        nav_date = scheme.date if scheme.date else date.today()
+        scheme_txns.append((nav_date, current_val))
+        
+        xirr_val = calculate_xirr(scheme_txns)
+        
+        # Absolute Return
+        abs_return = current_val - curr_invested
+        return_pct = (abs_return / curr_invested) * 100 if curr_invested > 0 else 0
         
         summary.append({
-            "scheme_code": item.scheme_code,
-            "scheme_name": item.scheme.scheme_name,
-            "invested_amount": item.invested_amount,
-            "current_value": current_value,
-            "total_units": item.total_units,
-            "average_nav": item.average_nav,
+            "scheme_code": scheme_code,
+            "scheme_name": scheme.scheme_name,
+            "category": scheme.category,
+            "fund_house": scheme.fund_house,
+            "invested_amount": curr_invested,
+            "current_value": current_val,
+            "total_units": curr_units,
+            "average_nav": avg_nav,
             "current_nav": current_nav,
             "absolute_return": abs_return,
-            "return_percentage": return_pct
+            "return_percentage": return_pct,
+            "xirr": xirr_val
         })
         
-        total_invested += item.invested_amount
-        total_current_value += current_value
+        total_invested += curr_invested
+        total_current_value += current_val
+        
+    # Global Portfolio XIRR
+    if total_current_value > 0:
+        global_cashflows.append((date.today(), total_current_value))
+        portfolio_xirr = calculate_xirr(global_cashflows)
+    else:
+        portfolio_xirr = 0.0
         
     return {
         "holdings": summary,
         "total_invested": total_invested,
         "total_current_value": total_current_value,
-        "total_gain": total_current_value - total_invested
+        "total_gain": total_current_value - total_invested,
+        "portfolio_xirr": portfolio_xirr
     }
 
 def add_to_watchlist(db: Session, scheme_code: str, group_id: int = None, target_nav: float = None, units: float = 0.0, invested_amount: float = 0.0):
@@ -207,6 +325,8 @@ def get_watchlist(db: Session):
             "id": item.id,
             "scheme_code": item.scheme_code,
             "scheme_name": item.scheme.scheme_name,
+            "category": item.scheme.category,
+            "fund_house": item.scheme.fund_house,
             "nav": current_nav,
             "date": item.scheme.date,
             "group_id": item.group_id,
