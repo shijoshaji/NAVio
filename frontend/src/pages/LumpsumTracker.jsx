@@ -22,6 +22,30 @@ const LumpsumTracker = () => {
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
     const [itemToDelete, setItemToDelete] = useState(null);
 
+    const [holdingPeriod, setHoldingPeriod] = useState('');
+
+    const handleHoldingPeriodChange = (e) => {
+        setHoldingPeriod(e.target.value);
+    };
+
+    const getRedemptionDate = () => {
+        if (!formData.purchase_date || !holdingPeriod) return null;
+        try {
+            const date = new Date(formData.purchase_date);
+            const years = parseFloat(holdingPeriod);
+            if (isNaN(years)) return null;
+
+            // Add years
+            const millisecondsPerYear = 1000 * 60 * 60 * 24 * 365.25;
+            const targetTime = date.getTime() + (years * millisecondsPerYear);
+            return new Date(targetTime).toLocaleDateString('en-IN', {
+                day: 'numeric', month: 'short', year: 'numeric'
+            });
+        } catch (e) {
+            return null;
+        }
+    };
+
     const fetchInvestments = async () => {
         try {
             const { data } = await getInvestments('LUMPSUM');
@@ -56,6 +80,7 @@ const LumpsumTracker = () => {
             const payload = {
                 scheme_code: selectedScheme.scheme_code,
                 type: 'LUMPSUM',
+                holding_period: holdingPeriod ? parseFloat(holdingPeriod) : null,
                 ...formData
             };
 
@@ -75,6 +100,7 @@ const LumpsumTracker = () => {
                 purchase_nav: '',
                 purchase_date: new Date().toISOString().split('T')[0]
             });
+            setHoldingPeriod('');
             setSelectedScheme(null);
             fetchInvestments();
         } catch (error) {
@@ -92,6 +118,7 @@ const LumpsumTracker = () => {
             purchase_nav: inv.purchase_nav,
             purchase_date: inv.purchase_date
         });
+        setHoldingPeriod(inv.holding_period || '');
 
         setSelectedScheme({
             scheme_code: inv.scheme_code,
@@ -128,6 +155,7 @@ const LumpsumTracker = () => {
             purchase_nav: '',
             purchase_date: new Date().toISOString().split('T')[0]
         });
+        setHoldingPeriod('');
         setSelectedScheme(null);
     };
 
@@ -163,7 +191,7 @@ const LumpsumTracker = () => {
                         />
 
                         <div>
-                            <label className="text-sm font-medium">Amount (₹)</label>
+                            <label className="text-sm font-medium">Investment Amount (₹)</label>
                             <input
                                 type="number"
                                 required
@@ -175,7 +203,7 @@ const LumpsumTracker = () => {
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <label className="text-sm font-medium">Purchase NAV</label>
+                                <label className="text-sm font-medium">Avg Purchased NAV</label>
                                 <input
                                     type="number"
                                     step="0.0001"
@@ -187,7 +215,7 @@ const LumpsumTracker = () => {
                                 />
                             </div>
                             <div>
-                                <label className="text-sm font-medium">Date</label>
+                                <label className="text-sm font-medium">Last invested date</label>
                                 <input
                                     type="date"
                                     required
@@ -197,6 +225,22 @@ const LumpsumTracker = () => {
                                     max={new Date().toISOString().split('T')[0]}
                                 />
                             </div>
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium">Holding Period (Years)</label>
+                            <input
+                                type="number"
+                                step="0.1"
+                                className="flex h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50"
+                                placeholder="Enter years to auto-calculate date"
+                                value={holdingPeriod}
+                                onChange={handleHoldingPeriodChange}
+                            />
+                            {getRedemptionDate() && (
+                                <p className="text-xs text-emerald-400 mt-1">
+                                    Planned Redemption: {getRedemptionDate()}
+                                </p>
+                            )}
                         </div>
                         <button
                             type="submit"

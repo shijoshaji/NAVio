@@ -1,9 +1,9 @@
 from sqlalchemy.orm import Session
-from models import Investment, Portfolio, Scheme, Watchlist, WatchlistGroup
-from datetime import date
+from models import Investment, Portfolio, Scheme, Watchlist, WatchlistGroup, NAVHistory
+from datetime import date, timedelta
 from sqlalchemy import func
 
-def add_investment(db: Session, scheme_code: str, invest_type: str, amount: float, purchase_nav: float, purchase_date: date):
+def add_investment(db: Session, scheme_code: str, invest_type: str, amount: float, purchase_nav: float, purchase_date: date, holding_period: float = None):
     """
     Adds a new investment (SIP or Lumpsum) and updates the portfolio.
     """
@@ -16,7 +16,8 @@ def add_investment(db: Session, scheme_code: str, invest_type: str, amount: floa
         amount=amount,
         units=units,
         purchase_nav=purchase_nav,
-        purchase_date=purchase_date
+        purchase_date=purchase_date,
+        holding_period=holding_period
     )
     db.add(new_investment)
     
@@ -172,6 +173,38 @@ def get_portfolio_summary(db: Session, filter_type: str = None):
         abs_return = current_val - curr_invested
         return_pct = (abs_return / curr_invested) * 100 if curr_invested > 0 else 0
         
+        # Last Investment Details
+        last_inv = sorted(raw_txns, key=lambda x: x.purchase_date, reverse=True)[0]
+        last_invested_date = last_inv.purchase_date
+        holding_period = last_inv.holding_period
+        
+        redemption_date = None
+        if last_invested_date and holding_period:
+            # Approximation: 365.25 days per year
+            days = int(holding_period * 365.25)
+            redemption_date = last_invested_date + timedelta(days=days)
+            
+        # Check if any transaction is SIP
+        is_sip = any(i.type == 'SIP' for i in raw_txns)
+        
+        # 52-Week High/Low Calculation
+        one_year_ago = date.today() - timedelta(days=365)
+        
+        # We need dates, so we must fetch the rows
+        query_52w = db.query(NAVHistory).filter(
+            NAVHistory.scheme_code == scheme_code,
+            NAVHistory.date >= one_year_ago
+        )
+        
+        high_52_row = query_52w.order_by(NAVHistory.net_asset_value.desc()).first()
+        low_52_row = query_52w.order_by(NAVHistory.net_asset_value.asc()).first()
+
+        min_52w = low_52_row.net_asset_value if low_52_row else current_nav
+        max_52w = high_52_row.net_asset_value if high_52_row else current_nav
+        
+        min_52w_date = low_52_row.date if low_52_row else None
+        max_52w_date = high_52_row.date if high_52_row else None
+        
         summary.append({
             "scheme_code": scheme_code,
             "scheme_name": scheme.scheme_name,
@@ -184,7 +217,15 @@ def get_portfolio_summary(db: Session, filter_type: str = None):
             "current_nav": current_nav,
             "absolute_return": abs_return,
             "return_percentage": return_pct,
-            "xirr": xirr_val
+            "xirr": xirr_val,
+            "last_invested_date": last_invested_date,
+            "holding_period": holding_period,
+            "redemption_date": redemption_date,
+            "is_sip": is_sip,
+            "min_52w": min_52w,
+            "max_52w": max_52w,
+            "min_52w_date": min_52w_date,
+            "max_52w_date": max_52w_date
         })
         
         total_invested += curr_invested
@@ -456,7 +497,7 @@ def delete_investment(db: Session, investment_id: int):
     db.commit()
     return True
 
-def update_investment(db: Session, investment_id: int, scheme_code: str, invest_type: str, amount: float, purchase_nav: float, purchase_date: date):
+def update_investment(db: Session, investment_id: int, scheme_code: str, invest_type: str, amount: float, purchase_nav: float, purchase_date: date, holding_period: float = None):
     """
     Updates an investment by reversing old one and adding new one.
     """
@@ -485,6 +526,7 @@ def update_investment(db: Session, investment_id: int, scheme_code: str, invest_
     investment.amount = amount
     investment.purchase_nav = purchase_nav
     investment.purchase_date = purchase_date
+    investment.holding_period = holding_period
     
     new_units = amount / purchase_nav
     investment.units = new_units

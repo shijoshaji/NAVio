@@ -26,6 +26,7 @@ class Investment(Base):
     units = Column(Float)
     purchase_nav = Column(Float)
     purchase_date = Column(Date)
+    holding_period = Column(Float, nullable=True)
     
     scheme = relationship("Scheme")
 

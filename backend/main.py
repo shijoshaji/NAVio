@@ -23,6 +23,20 @@ try:
                 except:
                     pass # Some drivers auto-commit or don't support it on DDL
             print("Migration complete.")
+            
+    # Auto-migration for holding_period column in investments
+    if 'investments' in inspector.get_table_names():
+        columns = [c['name'] for c in inspector.get_columns('investments')]
+        if 'holding_period' not in columns:
+            print("Migrating DB: Adding holding_period column to investments...")
+            with engine.connect() as connection:
+                connection.execute(text("ALTER TABLE investments ADD COLUMN holding_period FLOAT"))
+                try:
+                    connection.commit()
+                except:
+                    pass
+            print("Migration complete.")
+            
 except Exception as e:
     print(f"Migration check failed: {e}")
 
@@ -61,6 +75,7 @@ class InvestmentBase(BaseModel):
     amount: float
     purchase_nav: float
     purchase_date: date
+    holding_period: Optional[float] = None
 
 class WatchlistBase(BaseModel):
     scheme_code: str
@@ -151,7 +166,8 @@ def add_investment(investment: InvestmentBase, db: Session = Depends(get_db)):
         invest_type=investment.type,
         amount=investment.amount,
         purchase_nav=investment.purchase_nav,
-        purchase_date=investment.purchase_date
+        purchase_date=investment.purchase_date,
+        holding_period=investment.holding_period
     )
 
 @app.get("/api/investments")
@@ -180,7 +196,8 @@ def update_investment(investment_id: int, investment: InvestmentBase, db: Sessio
         invest_type=investment.type,
         amount=investment.amount,
         purchase_nav=investment.purchase_nav,
-        purchase_date=investment.purchase_date
+        purchase_date=investment.purchase_date,
+        holding_period=investment.holding_period
     )
     if not updated_investment:
         raise HTTPException(status_code=404, detail="Investment not found")
