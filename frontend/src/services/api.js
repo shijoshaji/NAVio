@@ -24,7 +24,7 @@ const api = axios.create({
 });
 
 export const getPortfolio = (type) => api.get('/portfolio', { params: { type } });
-export const getInvestments = (type) => api.get('/investments', { params: { type } });
+export const getInvestments = (type, activeOnly = false) => api.get('/investments', { params: { type, active_only: activeOnly } });
 export const addInvestment = (data) => api.post('/investments', data);
 export const deleteInvestment = (id) => api.delete(`/investments/${id}`);
 export const updateInvestment = (id, data) => api.put(`/investments/${id}`, data);
@@ -44,5 +44,7 @@ export const getSchemeByCode = (code) => api.get(`/schemes/code/${code}`);
 export const deleteWatchlistItem = (id) => api.delete(`/watchlist/item/${id}`);
 export const markWatchlistItemSold = (id, data) => api.post(`/watchlist/item/${id}/sell`, data);
 export const updateWatchlistDate = (id, date) => api.patch(`/watchlist/item/${id}/date`, { date });
+export const redeemInvestment = (data) => api.post('/redeem', data);
+export const deleteScheme = (schemeCode) => api.delete(`/portfolio/scheme/${schemeCode}`);
 
 export default api;

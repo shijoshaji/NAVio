@@ -136,24 +136,100 @@ def get_portfolio_summary(db: Session, filter_type: str = None):
     summary = []
     total_invested = 0
     total_current_value = 0
+    total_realized_pnl = 0.0
     global_cashflows = []
     
     for scheme_code, raw_txns in inv_map.items():
         scheme = scheme_map.get(scheme_code)
         if not scheme: continue 
         
-        # Aggregate logic
-        curr_units = sum(i.units for i in raw_txns)
+        # Aggregate logic with Realized P&L (Average Cost Method)
+        # Sort transactions by date to ensure correct cost basis evolution
+        sorted_txns = sorted(raw_txns, key=lambda x: x.purchase_date)
         
-        # Skip if units are zero (sold out completely in this view)
-        if curr_units <= 0.0001:
-            continue
-            
-        curr_invested = sum(i.amount for i in raw_txns)
+        curr_units = 0.0
+        curr_invested = 0.0
+        scheme_realized_pnl = 0.0
+        scheme_realized_value = 0.0
+        
+        # First Investment Date (for Duration calculation)
+        first_invested_date = sorted_txns[0].purchase_date if sorted_txns else None
+
+        total_units_sold = 0.0
+        total_units_bought = 0.0 # New: Track total bought units
+        gross_invested_amount = 0.0 # New: Track total money put in
+        last_sell_date = None
+        
+        for txn in sorted_txns:
+            if txn.units > 0: # BUY (SIP/LUMPSUM)
+                curr_units += txn.units
+                curr_invested += txn.amount
+                total_units_bought += txn.units
+                gross_invested_amount += txn.amount
+            else: # SELL (REDEMPTION) - Units are negative
+                units_sold = abs(txn.units)
+                total_units_sold += units_sold
+                last_sell_date = txn.purchase_date # Since sorted by date, this will update to latest
+                
+                if curr_units > 0:
+                    # Calculate Average Cost at time of sale
+                    avg_cost_per_unit = curr_invested / curr_units
+                    cost_of_sold = avg_cost_per_unit * units_sold
+                    
+                    sale_value = abs(txn.amount) # Amount stored as negative for outflows
+                    pnl = sale_value - cost_of_sold
+                    scheme_realized_pnl += pnl
+                    scheme_realized_value += sale_value
+                    
+                    # Reduce basis
+                    curr_invested -= cost_of_sold
+                    curr_units -= units_sold
+                    
+                    # Safety adjustments for floating point errors
+                    if curr_units < 1e-5: 
+                        curr_units = 0
+                        curr_invested = 0
+                else:
+                    # Selling without units (shouldn't happen technically)
+                    pass
+
+        # Skip if units are zero AND no P&L (completely inactive)
+        # But if we have Realized P&L, we might want to show it? 
+        # For now, let's keep the user's existing logic of skipping sold-out schemes in active view,
+        # OR better: The user wants "Realized P&L" on Dashboard. 
+        # If we skip here, we lose the P&L stats.
+        # However, the current view is "Holdings". Sold out schemes shouldn't appear in Holdings.
+        # But we need to aggregate P&L globally.
+        
+        # We will continue to calculate, but flag for filtering
+        is_active = curr_units > 0.0001
         
         # Average NAV
         avg_nav = curr_invested / curr_units if curr_units > 0 else 0
         
+        # Original Buy NAV (Weighted Average of ALL buys)
+        avg_buy_nav = gross_invested_amount / total_units_bought if total_units_bought > 0 else 0
+        
+        # Avg Sold NAV
+        avg_sold_nav = scheme_realized_value / total_units_sold if total_units_sold > 0 else 0
+        
+        # Tax Status Calculation (Simplified)
+        # Logic: If 'Equity' in category and duration > 365 days -> Long Term
+        # Else if duration > 1095 days (3 years) -> Long Term
+        # Else Short Term
+        tax_status = "Short Term"
+        days_held = 0
+        if first_invested_date and last_sell_date:
+            days_held = (last_sell_date - first_invested_date).days
+            
+        is_equity = scheme.category and ('Equity' in scheme.category or 'Index' in scheme.category)
+        if is_equity:
+            if days_held > 365:
+                tax_status = "Long Term"
+        else:
+            if days_held > 1095:
+                tax_status = "Long Term"
+
         # Current Value
         current_nav = scheme.net_asset_value
         current_val = curr_units * current_nav
@@ -219,32 +295,112 @@ def get_portfolio_summary(db: Session, filter_type: str = None):
             "return_percentage": return_pct,
             "xirr": xirr_val,
             "last_invested_date": last_invested_date,
+            "first_invested_date": first_invested_date,
+            "last_sell_date": last_sell_date,
             "holding_period": holding_period,
             "redemption_date": redemption_date,
             "is_sip": is_sip,
             "min_52w": min_52w,
             "max_52w": max_52w,
             "min_52w_date": min_52w_date,
-            "max_52w_date": max_52w_date
+            "max_52w_date": max_52w_date,
+            "min_52w_date": min_52w_date,
+            "max_52w_date": max_52w_date,
+            "realized_pnl": scheme_realized_pnl,
+            "realized_value": scheme_realized_value,
+            "total_units_sold": total_units_sold,
+            "avg_sold_nav": avg_sold_nav,
+            "total_units_bought": total_units_bought,
+            "avg_buy_nav": avg_buy_nav,
+            "gross_invested_amount": gross_invested_amount,
+            "tax_status": tax_status
         })
         
         total_invested += curr_invested
         total_current_value += current_val
+        total_realized_pnl += scheme_realized_pnl
         
     # Global Portfolio XIRR
-    if total_current_value > 0:
-        global_cashflows.append((date.today(), total_current_value))
-        portfolio_xirr = calculate_xirr(global_cashflows)
-    else:
-        portfolio_xirr = 0.0
+    portfolio_xirr = 0.0
+    if total_current_value > 0 or total_realized_pnl != 0:
+        # Add current value as a cashflow at today's date
+        calc_cashflows = list(global_cashflows)
+        calc_cashflows.append((date.today(), total_current_value))
+        portfolio_xirr = calculate_xirr(calc_cashflows)
+
+    if total_current_value > 0 or total_realized_pnl != 0:
+        return {
+            "holdings": summary,
+            "total_invested": total_invested,
+            "total_current_value": total_current_value,
+            "total_gain": total_current_value - total_invested,
+            "total_realized_pnl": total_realized_pnl,
+            "portfolio_xirr": portfolio_xirr
+        }
+
+def delete_scheme_history(db: Session, scheme_code: str):
+    """
+    Permanently delete all investment history for a scheme.
+    Used for removing 'Sold' items from history.
+    """
+    # 1. Delete all investments for this scheme
+    db.query(Investment).filter(Investment.scheme_code == scheme_code).delete()
+    
+    # 2. Delete portfolio aggregate entry
+    db.query(Portfolio).filter(Portfolio.scheme_code == scheme_code).delete()
+    
+    db.commit()
+    return True
+
+def redeem_investment(db: Session, scheme_code: str, units: float, nav: float, date: date, remarks: str = None):
+    # 1. Add Investment Entry (Negative Units/Amount)
+    # Amount is negative (Outflow)
+    amount = -(units * nav)
+    
+    new_redemption = Investment(
+        scheme_code=scheme_code,
+        type='REDEMPTION',
+        amount=amount, 
+        units=-units, # Negative units for redemption
+        purchase_nav=nav,
+        purchase_date=date,
+        holding_period=None
+    )
+    
+    db.add(new_redemption)
+    db.commit()
+    db.refresh(new_redemption)
+    
+    # 2. Update Portfolio Aggregate
+    # We update the portfolio table item. 
+    # Logic similar to add_investment but we need to handle reduction.
+    
+    portfolio_item = db.query(Portfolio).filter(Portfolio.scheme_code == scheme_code).first()
+    if portfolio_item:
+        # Avoid division by zero if it was somehow 0
+        if portfolio_item.total_units > 0:
+             # Reduce Invested Amount proportionally (Average Cost Method)
+             # Invested Amount remains proportional to units if we consider 'Remaining Cost'
+             # Or we can just calculate: New Invested = (Old Invested / Old Units) * New Units
+             
+             avg_cost = portfolio_item.invested_amount / portfolio_item.total_units
+             cost_removed = avg_cost * units
+             
+             portfolio_item.total_units -= units
+             portfolio_item.invested_amount -= cost_removed
+             
+             # Safety
+             if portfolio_item.total_units < 1e-5:
+                 portfolio_item.total_units = 0
+                 portfolio_item.invested_amount = 0
+        else:
+             portfolio_item.total_units = 0
+             portfolio_item.invested_amount = 0
+
+        db.commit()
+        db.refresh(portfolio_item)
         
-    return {
-        "holdings": summary,
-        "total_invested": total_invested,
-        "total_current_value": total_current_value,
-        "total_gain": total_current_value - total_invested,
-        "portfolio_xirr": portfolio_xirr
-    }
+    return new_redemption
 
 def add_to_watchlist(db: Session, scheme_code: str, group_id: int = None, target_nav: float = None, units: float = 0.0, invested_amount: float = 0.0):
     """Adds a scheme to the watchlist with optional group and details."""

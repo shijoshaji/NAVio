@@ -77,6 +77,13 @@ class InvestmentBase(BaseModel):
     purchase_date: date
     holding_period: Optional[float] = None
 
+class RedeemRequest(BaseModel):
+    scheme_code: str
+    units: float
+    nav: float
+    date: date
+    remarks: Optional[str] = None
+
 class WatchlistBase(BaseModel):
     scheme_code: str
     group_id: Optional[int] = None
@@ -157,6 +164,14 @@ def get_portfolio(type: Optional[str] = None, db: Session = Depends(get_db)):
     """Get portfolio summary with current valuation"""
     return portfolio.get_portfolio_summary(db, filter_type=type)
 
+@app.delete("/api/portfolio/scheme/{scheme_code}")
+def delete_scheme_history(scheme_code: str, db: Session = Depends(get_db)):
+    """Permanently delete all transaction history for a scheme"""
+    result = portfolio.delete_scheme_history(db, scheme_code)
+    if not result:
+        raise HTTPException(status_code=404, detail="Scheme not found")
+    return {"message": "Scheme history deleted"}
+
 @app.post("/api/investments")
 def add_investment(investment: InvestmentBase, db: Session = Depends(get_db)):
     """Add a new investment (SIP or Lumpsum)"""
@@ -170,10 +185,28 @@ def add_investment(investment: InvestmentBase, db: Session = Depends(get_db)):
         holding_period=investment.holding_period
     )
 
+@app.post("/api/redeem")
+def redeem_investment(redemption: RedeemRequest, db: Session = Depends(get_db)):
+    """Redeem (sell) mutual fund units"""
+    return portfolio.redeem_investment(
+        db,
+        scheme_code=redemption.scheme_code,
+        units=redemption.units,
+        nav=redemption.nav,
+        date=redemption.date,
+        remarks=redemption.remarks
+    )
+
 @app.get("/api/investments")
-def get_investments(type: Optional[str] = None, db: Session = Depends(get_db)):
+def get_investments(type: Optional[str] = None, active_only: bool = False, db: Session = Depends(get_db)):
     from sqlalchemy.orm import joinedload
     query = db.query(models.Investment).options(joinedload(models.Investment.scheme))
+    
+    if active_only:
+        # Join with Portfolio to check if scheme is active (units > 0)
+        query = query.join(models.Portfolio, models.Investment.scheme_code == models.Portfolio.scheme_code)\
+                     .filter(models.Portfolio.total_units > 0)
+
     if type:
         query = query.filter(models.Investment.type == type)
     return query.order_by(models.Investment.purchase_date.desc()).all()

@@ -48,7 +48,7 @@ const LumpsumTracker = () => {
 
     const fetchInvestments = async () => {
         try {
-            const { data } = await getInvestments('LUMPSUM');
+            const { data } = await getInvestments('LUMPSUM', true); // activeOnly=true to hide sold schemes
             setInvestments(data);
         } catch (error) {
             console.error("Failed to fetch Lumpsum investments", error);

@@ -253,7 +253,7 @@ const Dashboard = () => {
             </div>
 
             {/* KPI Cards */}
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className="grid gap-5 md:grid-cols-5">
                 <div className="rounded-xl border border-slate-800 bg-slate-900 text-slate-50 shadow p-6">
                     <div className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <h3 className="tracking-tight text-sm font-medium">Total Invested</h3>
@@ -280,6 +280,15 @@ const Dashboard = () => {
                         <span className="text-sm font-medium opacity-80 ml-1">
                             ({((portfolio?.total_gain / portfolio?.total_invested) * 100).toFixed(2)}%)
                         </span>
+                    </div>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-900 text-slate-50 shadow p-6">
+                    <div className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <h3 className="tracking-tight text-sm font-medium">Realized P&L</h3>
+                        <IndianRupee className="h-4 w-4 text-slate-400" />
+                    </div>
+                    <div className={`text-2xl font-bold ${portfolio?.total_realized_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {portfolio?.total_realized_pnl >= 0 ? '+' : ''}₹{portfolio?.total_realized_pnl?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || '0'}
                     </div>
                 </div>
                 <div className="rounded-xl border border-slate-800 bg-slate-900 text-slate-50 shadow p-6 relative group">
