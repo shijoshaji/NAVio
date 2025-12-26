@@ -15,6 +15,7 @@ import {
 } from '../services/api';
 import FundSelector from '../components/FundSelector';
 import ConfirmModal from '../components/ConfirmModal';
+import PrivacyGuard from '../components/PrivacyGuard';
 
 const Watchlist = () => {
     // Data State
@@ -397,7 +398,7 @@ const Watchlist = () => {
                 <div className="bg-slate-900 border border-slate-700 p-3 rounded shadow-xl">
                     <p className="font-semibold text-slate-200">{data.name}</p>
                     <p className="text-sm font-mono" style={{ color: data.fill }}>
-                        ₹{data.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        <PrivacyGuard>₹{data.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</PrivacyGuard>
                     </p>
                 </div>
             );
@@ -504,16 +505,16 @@ const Watchlist = () => {
                             <div className="space-y-4">
                                 <div className="flex justify-between items-baseline border-b border-slate-800 pb-2">
                                     <span className="text-sm text-slate-500">Invested</span>
-                                    <span className="text-lg font-mono text-slate-300">₹{allFundsOverview.invested.toLocaleString()}</span>
+                                    <span className="text-lg font-mono text-slate-300"><PrivacyGuard>₹{allFundsOverview.invested.toLocaleString()}</PrivacyGuard></span>
                                 </div>
                                 <div className="flex justify-between items-baseline border-b border-slate-800 pb-2">
                                     <span className="text-sm text-slate-500">Current</span>
                                     <div className="text-right">
-                                        <div className="text-lg font-mono text-blue-400">₹{allFundsOverview.currentValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                                        <div className="text-lg font-mono text-blue-400"><PrivacyGuard>₹{allFundsOverview.currentValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</PrivacyGuard></div>
                                         <div className={`text-xs font-medium ${allFundsOverview.currentValue >= allFundsOverview.invested ? 'text-green-500' : 'text-red-500'}`}>
-                                            {allFundsOverview.currentValue >= allFundsOverview.invested ? '+' : ''}₹{(allFundsOverview.currentValue - allFundsOverview.invested).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                            <PrivacyGuard>{allFundsOverview.currentValue >= allFundsOverview.invested ? '+' : ''}₹{(allFundsOverview.currentValue - allFundsOverview.invested).toLocaleString(undefined, { maximumFractionDigits: 0 })}</PrivacyGuard>
                                             <span className="ml-1 opacity-75">
-                                                ({((allFundsOverview.currentValue - allFundsOverview.invested) / allFundsOverview.invested * 100).toFixed(2)}%)
+                                                <PrivacyGuard>({((allFundsOverview.currentValue - allFundsOverview.invested) / allFundsOverview.invested * 100).toFixed(2)}%)</PrivacyGuard>
                                             </span>
                                         </div>
                                     </div>
@@ -521,11 +522,11 @@ const Watchlist = () => {
                                 <div className="flex justify-between items-baseline border-b border-slate-800 pb-2">
                                     <span className="text-sm text-slate-500">Target Goal</span>
                                     <div className="text-right">
-                                        <div className="text-lg font-mono text-emerald-400">₹{allFundsOverview.targetValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                                        <div className="text-lg font-mono text-emerald-400"><PrivacyGuard>₹{allFundsOverview.targetValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</PrivacyGuard></div>
                                         <div className="text-xs font-medium text-emerald-500/80">
-                                            +₹{(allFundsOverview.targetValue - allFundsOverview.investedWithTarget).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                            <PrivacyGuard>+₹{(allFundsOverview.targetValue - allFundsOverview.investedWithTarget).toLocaleString(undefined, { maximumFractionDigits: 0 })}</PrivacyGuard>
                                             <span className="ml-1 opacity-75">
-                                                ({((allFundsOverview.targetValue - allFundsOverview.investedWithTarget) / allFundsOverview.investedWithTarget * 100).toFixed(2)}%)
+                                                <PrivacyGuard>({((allFundsOverview.targetValue - allFundsOverview.investedWithTarget) / allFundsOverview.investedWithTarget * 100).toFixed(2)}%)</PrivacyGuard>
                                             </span>
                                         </div>
                                     </div>
@@ -534,7 +535,7 @@ const Watchlist = () => {
                                     <span className="text-sm text-slate-500">Realised P&L</span>
                                     <div className="text-right">
                                         <div className={`text-lg font-mono ${allFundsOverview.realisedPL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                            {allFundsOverview.realisedPL >= 0 ? '+' : ''}₹{allFundsOverview.realisedPL.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                            <PrivacyGuard>{allFundsOverview.realisedPL >= 0 ? '+' : ''}₹{allFundsOverview.realisedPL.toLocaleString(undefined, { maximumFractionDigits: 0 })}</PrivacyGuard>
                                         </div>
                                         <div className="text-xs text-slate-500">
                                             {allFundsOverview.soldCount} exited funds
@@ -690,18 +691,20 @@ const Watchlist = () => {
                             {/* 1. Invested (Active Only) */}
                             <div>
                                 <div className="text-xs text-slate-500 uppercase font-semibold mb-1">Active Invested</div>
-                                <div className="text-2xl font-mono text-slate-200">₹{groupOverview.invested.toLocaleString()}</div>
+                                <div className="text-2xl font-mono text-slate-200"><PrivacyGuard>₹{groupOverview.invested.toLocaleString()}</PrivacyGuard></div>
                             </div>
 
                             {/* 2. Current Value (Active Only) */}
                             <div>
                                 <div className="text-xs text-slate-500 uppercase font-semibold mb-1">Active Current</div>
-                                <div className="text-2xl font-mono text-slate-50">₹{groupOverview.currentValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                                <div className="text-2xl font-mono text-slate-50"><PrivacyGuard>₹{groupOverview.currentValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</PrivacyGuard></div>
                                 <div className={`text-sm mt-1 font-medium ${groupOverview.currentValue - groupOverview.invested >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                    {(groupOverview.currentValue - groupOverview.invested) >= 0 ? '+' : ''}
-                                    {(groupOverview.currentValue - groupOverview.invested).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                    <PrivacyGuard>
+                                        {(groupOverview.currentValue - groupOverview.invested) >= 0 ? '+' : ''}
+                                        {(groupOverview.currentValue - groupOverview.invested).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                    </PrivacyGuard>
                                     <span className="ml-1 opacity-75">
-                                        ({(groupOverview.invested > 0 ? ((groupOverview.currentValue - groupOverview.invested) / groupOverview.invested * 100) : 0).toFixed(2)}%)
+                                        <PrivacyGuard>({(groupOverview.invested > 0 ? ((groupOverview.currentValue - groupOverview.invested) / groupOverview.invested * 100) : 0).toFixed(2)}%)</PrivacyGuard>
                                     </span>
                                 </div>
                             </div>
@@ -709,12 +712,14 @@ const Watchlist = () => {
                             {/* 3. Target Value (Active Only) */}
                             <div>
                                 <div className="text-xs text-slate-500 uppercase font-semibold mb-1">Target Goal</div>
-                                <div className="text-2xl font-mono text-slate-300">₹{groupOverview.targetValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                                <div className="text-2xl font-mono text-slate-300"><PrivacyGuard>₹{groupOverview.targetValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</PrivacyGuard></div>
                                 <div className={`text-sm mt-1 font-medium ${groupOverview.targetValue - groupOverview.investedWithTarget >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                    {(groupOverview.targetValue - groupOverview.investedWithTarget) >= 0 ? '+' : ''}
-                                    {(groupOverview.targetValue - groupOverview.investedWithTarget).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                    <PrivacyGuard>
+                                        {(groupOverview.targetValue - groupOverview.investedWithTarget) >= 0 ? '+' : ''}
+                                        {(groupOverview.targetValue - groupOverview.investedWithTarget).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                    </PrivacyGuard>
                                     <span className="ml-1 opacity-75">
-                                        ({(groupOverview.investedWithTarget > 0 ? ((groupOverview.targetValue - groupOverview.investedWithTarget) / groupOverview.investedWithTarget * 100) : 0).toFixed(2)}%)
+                                        <PrivacyGuard>({(groupOverview.investedWithTarget > 0 ? ((groupOverview.targetValue - groupOverview.investedWithTarget) / groupOverview.investedWithTarget * 100) : 0).toFixed(2)}%)</PrivacyGuard>
                                     </span>
                                 </div>
                             </div>
@@ -723,7 +728,7 @@ const Watchlist = () => {
                             <div className="bg-slate-900/40 -m-2 p-4 rounded border border-slate-700/50">
                                 <div className="text-xs text-slate-500 uppercase font-semibold mb-1">Realised P&L</div>
                                 <div className={`text-2xl font-mono ${groupOverview.realisedPL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                    {groupOverview.realisedPL >= 0 ? '+' : ''}₹{groupOverview.realisedPL.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                    <PrivacyGuard>{groupOverview.realisedPL >= 0 ? '+' : ''}₹{groupOverview.realisedPL.toLocaleString(undefined, { maximumFractionDigits: 0 })}</PrivacyGuard>
                                 </div>
                                 <div className="text-xs text-slate-500 mt-1">
                                     From {groupOverview.soldCount} exited funds
@@ -928,19 +933,19 @@ const Watchlist = () => {
 
                                             <div className="flex justify-between items-center text-slate-500">
                                                 <span>Target</span>
-                                                <span className="font-mono text-slate-400">₹{item.target_nav || '-'}</span>
+                                                <span className="font-mono text-slate-400"><PrivacyGuard>₹{item.target_nav || '-'}</PrivacyGuard></span>
                                             </div>
 
                                             <div className="flex justify-between items-center">
                                                 <span className="text-slate-500">Current</span>
                                                 <div className="text-right">
-                                                    <span className="font-mono font-medium text-slate-200">₹{item.nav}</span>
+                                                    <span className="font-mono font-medium text-slate-200"><PrivacyGuard>₹{item.nav}</PrivacyGuard></span>
                                                     {item.target_nav > 0 && (
                                                         <div className="text-[10px] leading-none">
                                                             {isTargetHit ? (
                                                                 <span className="text-green-500 font-bold">HIT!</span>
                                                             ) : (
-                                                                <span className="text-amber-500">{(item.target_nav - item.nav).toFixed(2)} away</span>
+                                                                <span className="text-amber-500"><PrivacyGuard>{(item.target_nav - item.nav).toFixed(2)}</PrivacyGuard> away</span>
                                                             )}
                                                         </div>
                                                     )}
@@ -951,7 +956,7 @@ const Watchlist = () => {
                                                 <div className="space-y-1">
                                                     <div className="flex justify-between items-center text-slate-500">
                                                         <span>Avg Cost</span>
-                                                        <span className="font-mono text-slate-400">₹{averageNAV.toFixed(2)}</span>
+                                                        <span className="font-mono text-slate-400"><PrivacyGuard>₹{averageNAV.toFixed(2)}</PrivacyGuard></span>
                                                     </div>
 
                                                     {/* Entry Quality Metrics */}
@@ -1102,24 +1107,24 @@ const Watchlist = () => {
 
                                             <div className="flex justify-between items-center">
                                                 <span className="text-slate-500">Invested</span>
-                                                <span className="font-mono text-slate-300">₹{item.invested_amount.toLocaleString()}</span>
+                                                <span className="font-mono text-slate-300"><PrivacyGuard>₹{item.invested_amount.toLocaleString()}</PrivacyGuard></span>
                                             </div>
 
                                             <div className="flex justify-between items-center">
                                                 <span className="text-slate-500">{item.is_sold ? "Realised Val" : "Current"}</span>
-                                                <span className="font-mono text-slate-300">₹{item.current_value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                                <span className="font-mono text-slate-300"><PrivacyGuard>₹{item.current_value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</PrivacyGuard></span>
                                             </div>
 
                                             <div className="flex justify-between items-center">
                                                 <span className="text-slate-500">{item.is_sold ? "Realised P&L" : "Returns"}</span>
                                                 <span className={`font-mono font-medium ${item.gain_loss >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                                    {item.gain_loss >= 0 ? '+' : ''}{item.gain_loss.toFixed(0)}
+                                                    <PrivacyGuard>{item.gain_loss >= 0 ? '+' : ''}{item.gain_loss.toFixed(0)}</PrivacyGuard>
                                                 </span>
                                             </div>
 
                                             <div className="flex justify-end">
                                                 <span className={`text-[10px] px-1.5 rounded ${item.gain_loss >= 0 ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'}`}>
-                                                    {item.gain_loss_pct.toFixed(2)}%
+                                                    <PrivacyGuard>{item.gain_loss_pct.toFixed(2)}%</PrivacyGuard>
                                                 </span>
                                             </div>
                                         </div>
@@ -1138,13 +1143,13 @@ const Watchlist = () => {
 
                                                         <div className="flex justify-between text-slate-500">
                                                             <span>Sold Price</span>
-                                                            <span className="font-mono text-slate-300">₹{item.sold_nav}</span>
+                                                            <span className="font-mono text-slate-300"><PrivacyGuard>₹{item.sold_nav}</PrivacyGuard></span>
                                                         </div>
 
                                                         <div className="flex justify-between text-slate-500">
                                                             <span>Date</span>
                                                             <span className="font-mono text-slate-400">
-                                                                {item.sold_date ? new Date(item.sold_date).toLocaleDateString('en-GB') : '-'}
+                                                                <PrivacyGuard>{item.sold_date ? new Date(item.sold_date).toLocaleDateString('en-GB') : '-'}</PrivacyGuard>
                                                             </span>
                                                         </div>
 
@@ -1152,7 +1157,7 @@ const Watchlist = () => {
                                                             <div className="flex justify-between items-center">
                                                                 <span className="text-slate-500">Net Profit</span>
                                                                 <span className={`font-mono font-bold ${item.gain_loss >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                                                    {item.gain_loss >= 0 ? '+' : ''}{item.gain_loss.toFixed(0)}
+                                                                    <PrivacyGuard>{item.gain_loss >= 0 ? '+' : ''}{item.gain_loss.toFixed(0)}</PrivacyGuard>
                                                                 </span>
                                                             </div>
                                                         </div>
@@ -1164,20 +1169,20 @@ const Watchlist = () => {
 
                                                     <div className="flex justify-between items-center">
                                                         <span className="text-slate-500">Value</span>
-                                                        <span className="font-mono text-slate-300">₹{targetValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                                        <span className="font-mono text-slate-300"><PrivacyGuard>₹{targetValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</PrivacyGuard></span>
                                                     </div>
 
                                                     <div className="flex justify-between items-center">
                                                         <span className="text-slate-500">Profit</span>
                                                         <span className={`font-mono font-medium ${targetReturn >= 0 ? 'text-green-500/80' : 'text-red-500/80'}`}>
-                                                            {targetReturn > 0 ? '+' : ''}{targetReturn.toFixed(0)}
+                                                            <PrivacyGuard>{targetReturn > 0 ? '+' : ''}{targetReturn.toFixed(0)}</PrivacyGuard>
                                                         </span>
                                                     </div>
 
                                                     {item.invested_amount > 0 && item.target_nav > 0 && (
                                                         <div className="flex justify-end mt-1">
                                                             <span className={`text-[10px] px-1.5 rounded ${targetReturn >= 0 ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'}`}>
-                                                                {targetReturnPct.toFixed(2)}%
+                                                                <PrivacyGuard>{targetReturnPct.toFixed(2)}%</PrivacyGuard>
                                                             </span>
                                                         </div>
                                                     )}
@@ -1197,16 +1202,20 @@ const Watchlist = () => {
                                                     <span>52W High/Low</span>
                                                     <div className="text-right">
                                                         <div className={`font-mono ${item.target_nav > 0 && item.high_52w >= item.target_nav ? 'text-emerald-400 font-semibold' : 'text-slate-400'}`}>
-                                                            ₹{item.high_52w.toFixed(2)}
-                                                            <span className="text-[10px] text-slate-600 ml-1">
-                                                                ({item.high_52w_date ? new Date(item.high_52w_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }) : '-'})
-                                                            </span>
+                                                            <PrivacyGuard>
+                                                                ₹{item.high_52w.toFixed(2)}
+                                                                <span className="text-[10px] text-slate-600 ml-1">
+                                                                    ({item.high_52w_date ? new Date(item.high_52w_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }) : '-'})
+                                                                </span>
+                                                            </PrivacyGuard>
                                                         </div>
                                                         <div className="font-mono text-slate-400">
-                                                            ₹{item.low_52w.toFixed(2)}
-                                                            <span className="text-[10px] text-slate-600 ml-1">
-                                                                ({item.low_52w_date ? new Date(item.low_52w_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }) : '-'})
-                                                            </span>
+                                                            <PrivacyGuard>
+                                                                ₹{item.low_52w.toFixed(2)}
+                                                                <span className="text-[10px] text-slate-600 ml-1">
+                                                                    ({item.low_52w_date ? new Date(item.low_52w_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }) : '-'})
+                                                                </span>
+                                                            </PrivacyGuard>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1215,16 +1224,20 @@ const Watchlist = () => {
                                                     <span>Since Track H/L</span>
                                                     <div className="text-right">
                                                         <div className={`font-mono ${item.target_nav > 0 && item.high_since_tracking >= item.target_nav ? 'text-emerald-400 font-semibold' : 'text-slate-400'}`}>
-                                                            ₹{item.high_since_tracking.toFixed(2)}
-                                                            <span className="text-[10px] text-slate-600 ml-1">
-                                                                ({item.high_since_tracking_date ? new Date(item.high_since_tracking_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }) : '-'})
-                                                            </span>
+                                                            <PrivacyGuard>
+                                                                ₹{item.high_since_tracking.toFixed(2)}
+                                                                <span className="text-[10px] text-slate-600 ml-1">
+                                                                    ({item.high_since_tracking_date ? new Date(item.high_since_tracking_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }) : '-'})
+                                                                </span>
+                                                            </PrivacyGuard>
                                                         </div>
                                                         <div className="font-mono text-slate-400">
-                                                            ₹{item.low_since_tracking.toFixed(2)}
-                                                            <span className="text-[10px] text-slate-600 ml-1">
-                                                                ({item.low_since_tracking_date ? new Date(item.low_since_tracking_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }) : '-'})
-                                                            </span>
+                                                            <PrivacyGuard>
+                                                                ₹{item.low_since_tracking.toFixed(2)}
+                                                                <span className="text-[10px] text-slate-600 ml-1">
+                                                                    ({item.low_since_tracking_date ? new Date(item.low_since_tracking_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }) : '-'})
+                                                                </span>
+                                                            </PrivacyGuard>
                                                         </div>
                                                     </div>
                                                 </div>

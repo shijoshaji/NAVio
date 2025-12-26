@@ -1,18 +1,21 @@
 import { useState, useEffect } from 'react';
-import { Plus, Calendar, Trash2, Pencil } from 'lucide-react';
+import { Plus, Calendar, Trash2, Pencil, Users, ChevronDown } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { getInvestments, addInvestment, deleteInvestment, updateInvestment } from '../services/api';
+import { getInvestments, addInvestment, deleteInvestment, updateInvestment, getAccounts } from '../services/api';
 import FundSelector from '../components/FundSelector';
 import ConfirmModal from '../components/ConfirmModal';
+import PrivacyGuard from '../components/PrivacyGuard';
 
 const LumpsumTracker = () => {
     const [investments, setInvestments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedScheme, setSelectedScheme] = useState(null);
+    const [accounts, setAccounts] = useState([]);
     const [formData, setFormData] = useState({
         amount: '',
         purchase_nav: '',
-        purchase_date: new Date().toISOString().split('T')[0]
+        purchase_date: new Date().toISOString().split('T')[0],
+        account_name: 'Default'
     });
 
     // Edit/Delete State
@@ -59,6 +62,7 @@ const LumpsumTracker = () => {
 
     useEffect(() => {
         fetchInvestments();
+        getAccounts().then(({ data }) => setAccounts(data)).catch(err => console.error("Failed to fetch accounts", err));
     }, []);
 
     const handleSchemeSelect = (scheme) => {
@@ -98,11 +102,14 @@ const LumpsumTracker = () => {
             setFormData({
                 amount: '',
                 purchase_nav: '',
-                purchase_date: new Date().toISOString().split('T')[0]
+                purchase_date: new Date().toISOString().split('T')[0],
+                account_name: 'Default'
             });
             setHoldingPeriod('');
             setSelectedScheme(null);
             fetchInvestments();
+            // Refresh accounts list
+            getAccounts().then(({ data }) => setAccounts(data));
         } catch (error) {
             console.error("Failed to save Investment", error);
             toast.error(isEditMode ? "Failed to update Investment" : "Failed to add Investment");
@@ -116,7 +123,8 @@ const LumpsumTracker = () => {
         setFormData({
             amount: inv.amount,
             purchase_nav: inv.purchase_nav,
-            purchase_date: inv.purchase_date
+            purchase_date: inv.purchase_date,
+            account_name: inv.account_name || 'Default'
         });
         setHoldingPeriod(inv.holding_period || '');
 
@@ -153,7 +161,8 @@ const LumpsumTracker = () => {
         setFormData({
             amount: '',
             purchase_nav: '',
-            purchase_date: new Date().toISOString().split('T')[0]
+            purchase_date: new Date().toISOString().split('T')[0],
+            account_name: 'Default'
         });
         setHoldingPeriod('');
         setSelectedScheme(null);
@@ -189,6 +198,26 @@ const LumpsumTracker = () => {
                             onSelect={handleSchemeSelect}
                             selectedScheme={selectedScheme}
                         />
+
+                        <div>
+                            <label className="text-sm font-medium">Account</label>
+                            <div className="relative mt-1">
+                                <Users className="absolute left-3 top-2.5 h-4 w-4 text-slate-500 z-10" />
+                                <ChevronDown className="absolute right-3 top-3 h-4 w-4 text-slate-500 pointer-events-none z-10" />
+                                <select
+                                    className="flex h-10 w-full rounded-md border border-slate-700 bg-slate-950 pl-10 pr-10 py-2 text-sm text-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none relative"
+                                    value={formData.account_name}
+                                    onChange={(e) => setFormData({ ...formData, account_name: e.target.value })}
+                                >
+                                    <option value="Default">Default</option>
+                                    {accounts.map(acc => {
+                                        const val = typeof acc === 'object' ? acc.name : acc;
+                                        if (val === 'Default') return null;
+                                        return <option key={val} value={val}>{val}</option>;
+                                    })}
+                                </select>
+                            </div>
+                        </div>
 
                         <div>
                             <label className="text-sm font-medium">Investment Amount (₹)</label>
@@ -271,15 +300,17 @@ const LumpsumTracker = () => {
                                             <p className="text-sm font-medium leading-none truncate max-w-[200px]" title={inv.scheme?.scheme_name || inv.scheme_code}>
                                                 {inv.scheme?.scheme_name || inv.scheme_code}
                                             </p>
-                                            <p className="text-xs text-slate-400 flex items-center">
-                                                <Calendar className="mr-1 h-3 w-3" />
-                                                {inv.purchase_date}
+                                            <p className="text-xs text-slate-400 flex items-center gap-3">
+                                                <span className="flex items-center"><Calendar className="mr-1 h-3 w-3" /> <PrivacyGuard>{inv.purchase_date}</PrivacyGuard></span>
+                                                <span className="flex items-center text-slate-500 bg-slate-800/50 px-1.5 py-0.5 rounded border border-slate-800"><Users className="mr-1 h-3 w-3" /> {inv.account_name || 'Default'}</span>
                                             </p>
                                         </div>
                                         <div className="flex items-center gap-4">
                                             <div className="text-right">
-                                                <p className="text-sm font-bold">₹{inv.amount.toLocaleString()}</p>
-                                                <p className="text-xs text-slate-400">{inv.units.toFixed(3)} units @ ₹{inv.purchase_nav}</p>
+                                                <p className="text-sm font-bold"><PrivacyGuard>₹{inv.amount.toLocaleString()}</PrivacyGuard></p>
+                                                <p className="text-xs text-slate-400">
+                                                    <PrivacyGuard>{inv.units.toFixed(3)} units</PrivacyGuard> @ <PrivacyGuard>₹{inv.purchase_nav}</PrivacyGuard>
+                                                </p>
                                             </div>
                                             <div className="flex gap-1">
                                                 <button

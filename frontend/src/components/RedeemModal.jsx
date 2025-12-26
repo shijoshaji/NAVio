@@ -43,7 +43,8 @@ const RedeemModal = ({ isOpen, onClose, onRedeem, holding, loading }) => {
             units: unitsNum,
             nav: navNum,
             date: date,
-            remarks: remarks
+            remarks: remarks,
+            account_name: holding.account_name
         });
     };
 

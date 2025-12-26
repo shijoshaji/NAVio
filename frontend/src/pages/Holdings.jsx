@@ -1,19 +1,24 @@
 import { useState, useEffect, useMemo } from 'react';
-import { getPortfolio, redeemInvestment, deleteScheme } from '../services/api';
-import { RefreshCw, ChevronRight, ChevronDown, Layers, ChevronLeft, Info, ArrowUp, ArrowDown, BadgeDollarSign, Trash2 } from 'lucide-react';
+import { getPortfolio, redeemInvestment, deleteScheme, getAccounts } from '../services/api';
+import { RefreshCw, ChevronRight, ChevronDown, Layers, ChevronLeft, Info, ArrowUp, ArrowDown, BadgeDollarSign, Trash2, Filter } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import RedeemModal from '../components/RedeemModal';
 import ConfirmModal from '../components/ConfirmModal';
+import PrivacyGuard from '../components/PrivacyGuard';
 
 const Holdings = () => {
     const [portfolio, setPortfolio] = useState(null);
     const [loading, setLoading] = useState(true);
 
     // Grouping State
-    const [groupBy, setGroupBy] = useState('none'); // 'none', 'amc', 'category', 'asset'
+    const [groupBy, setGroupBy] = useState('none'); // 'none', 'amc', 'category', 'asset', 'account'
     const [expandedGroups, setExpandedGroups] = useState(new Set());
     const [expandAll, setExpandAll] = useState(false);
     const [dropdownOpen, setDropdownOpen] = useState(false);
+
+    // Filtering State
+    const [accounts, setAccounts] = useState([]);
+    const [filterAccount, setFilterAccount] = useState('All');
 
     // XIRR Visibility State
     const [showXIRR, setShowXIRR] = useState(false);
@@ -40,10 +45,10 @@ const Holdings = () => {
         schemeName: ''
     });
 
-    // Reset pagination when grouping changes
+    // Reset pagination when grouping or filter changes
     useEffect(() => {
         setCurrentPage(1);
-    }, [groupBy]);
+    }, [groupBy, filterAccount]);
 
     const handleSort = (key) => {
         let direction = 'asc';
@@ -108,6 +113,7 @@ const Holdings = () => {
 
     useEffect(() => {
         fetchPortfolio();
+        getAccounts().then(({ data }) => setAccounts(data)).catch(err => console.error(err));
     }, []);
 
     // Effect to handle Expand All toggle
@@ -119,19 +125,68 @@ const Holdings = () => {
         }
     }, [expandAll]);
 
-    // Derived Data: Grouping Logic
-    const groupedData = useMemo(() => {
-        if (!portfolio?.holdings || groupBy === 'none') return null;
-
-        const groups = {};
-
-        portfolio.holdings.forEach(item => {
-            // Filter based on activeTab (Active vs Sold) BEFORE grouping
+    // Derived Data: Filtered Holdings (Base for both grouping and summary)
+    const filteredHoldings = useMemo(() => {
+        if (!portfolio?.holdings) return [];
+        return portfolio.holdings.filter(item => {
+            // Filter based on activeTab (Active vs Sold)
             const isActive = item.total_units > 0;
             const isSold = item.total_units === 0 && (item.realized_pnl !== 0 || item.realized_value > 0);
 
-            if (activeTab === 'active' && !isActive) return;
-            if (activeTab === 'sold' && !isSold) return;
+            if (activeTab === 'active' && !isActive) return false;
+            if (activeTab === 'sold' && !isSold) return false;
+
+            // Account Filter Logic
+            const itemAccount = item.account_name || 'Default';
+            if (filterAccount !== 'All' && itemAccount !== filterAccount) return false;
+
+            return true;
+        });
+    }, [portfolio, activeTab, filterAccount]);
+
+    // Derived Data: Summary Metrics
+    const summaryMetrics = useMemo(() => {
+        const metrics = {
+            totalInvested: 0,
+            totalCurrent: 0,
+            totalRealizedPnl: 0,
+            totalRealizedValue: 0,
+            sipCount: 0,
+            lumpsumCount: 0
+        };
+
+        filteredHoldings.forEach(item => {
+            if (activeTab === 'sold') {
+                metrics.totalInvested += item.gross_invested_amount || 0;
+                metrics.totalCurrent += item.realized_value || 0;
+            } else {
+                metrics.totalInvested += item.invested_amount;
+                metrics.totalCurrent += item.current_value;
+            }
+            metrics.totalRealizedPnl += item.realized_pnl || 0;
+            metrics.totalRealizedValue += item.realized_value || 0;
+
+            if (item.is_sip) metrics.sipCount++;
+            else metrics.lumpsumCount++;
+        });
+
+        // ROI Calculation
+        const absReturn = metrics.totalCurrent - metrics.totalInvested;
+        const returnPerc = metrics.totalInvested > 0
+            ? (absReturn / metrics.totalInvested) * 100
+            : 0;
+
+        return { ...metrics, absReturn, returnPerc };
+    }, [filteredHoldings]);
+
+    // Derived Data: Grouping Logic
+    const groupedData = useMemo(() => {
+        if (!filteredHoldings.length || groupBy === 'none') return null;
+
+        const groups = {};
+
+        filteredHoldings.forEach(item => {
+            // Already filtered, just group now
 
             let key = 'Other';
 
@@ -166,6 +221,10 @@ const Holdings = () => {
                     if (cleanCat.includes(' - ')) key = cleanCat.split(' - ').pop().trim().replace(/ Fund$/i, '').replace(/ Scheme$/i, '');
                     else key = cleanCat;
                 }
+            }
+            // 3. Group By Account
+            else if (groupBy === 'account') {
+                key = item.account_name || 'Default';
             }
 
             if (!groups[key]) {
@@ -213,7 +272,7 @@ const Holdings = () => {
         return Object.fromEntries(
             Object.entries(groups).sort(([, a], [, b]) => b.totalCurrent - a.totalCurrent)
         );
-    }, [portfolio, groupBy, activeTab]);
+    }, [filteredHoldings, groupBy]);
 
     // Pagination Logic
     const paginatedData = useMemo(() => {
@@ -240,39 +299,13 @@ const Holdings = () => {
 
 
         if (groupBy === 'none') {
-            // Apply filtering logic here first
-            const filteredItems = (portfolio?.holdings || []).filter(item => {
-                if (activeTab === 'active') {
-                    return item.total_units > 0;
-                } else {
-                    return item.total_units === 0 && (item.realized_pnl !== 0 || item.realized_value > 0);
-                }
-            });
-
-            allItems = sortItems(filteredItems);
+            // Directly use filteredHoldings
+            allItems = sortItems(filteredHoldings);
         } else if (groupedData) {
-            // Grouping logic needs to respect activeTab too?
-            // Currently grouping logic runs on ALL items active or sold.
-            // If user switches tab, we probably shouldn't show group headers for empty groups in that tab.
-            // But paginatedData computes groups later. 
-            // Actually 'groupedData' derived state runs on ALL holdings.
-            // We should filter 'portfolio.holdings' BEFORE grouping or filter groups here.
-
-            // Let's filter groups here for simplicity:
+            // Flatten groups
             allItems = Object.entries(groupedData).map(([groupName, group]) => {
-                // Filter items WITHIN the group
-                const filteredGroupItems = group.items.filter(item => {
-                    if (activeTab === 'active') {
-                        return item.total_units > 0;
-                    } else {
-                        return item.total_units === 0 && (item.realized_pnl !== 0 || item.realized_value > 0);
-                    }
-                });
-
-                if (filteredGroupItems.length === 0) return null; // Skip empty groups
-
-                return [groupName, { ...group, items: sortItems(filteredGroupItems) }];
-            }).filter(Boolean); // Remove nulls
+                return [groupName, { ...group, items: sortItems(group.items) }];
+            }).filter(Boolean);
         }
 
         const totalItems = allItems.length;
@@ -281,7 +314,7 @@ const Holdings = () => {
         const currentItems = allItems.slice(start, start + rowsPerPage);
 
         return { currentItems, totalItems, totalPages };
-    }, [portfolio, groupedData, groupBy, currentPage, rowsPerPage, sortConfig, activeTab]);
+    }, [filteredHoldings, groupedData, groupBy, currentPage, rowsPerPage, sortConfig]);
 
     const toggleGroup = (groupName) => {
         setExpandedGroups(prev => {
@@ -340,7 +373,7 @@ const Holdings = () => {
 
                     <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 rounded-md px-3 py-1.5 relative">
                         <Layers className="h-4 w-4 text-slate-400" />
-                        <span className="text-sm text-slate-400">Group by:</span>
+                        <span className="text-sm text-slate-400">Group:</span>
 
                         <div className="relative">
                             <button
@@ -353,6 +386,7 @@ const Holdings = () => {
                                     {groupBy === 'category' && 'Category'}
                                     {groupBy === 'amc' && 'AMC'}
                                     {groupBy === 'asset' && 'Asset Class'}
+                                    {groupBy === 'account' && 'Account'}
                                 </span>
                                 <ChevronDown className={`h-3 w-3 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
                             </button>
@@ -363,7 +397,8 @@ const Holdings = () => {
                                         { label: 'None', value: 'none' },
                                         { label: 'Category', value: 'category' },
                                         { label: 'AMC', value: 'amc' },
-                                        { label: 'Asset Class', value: 'asset' }
+                                        { label: 'Asset Class', value: 'asset' },
+                                        { label: 'Account', value: 'account' }
                                     ].map((opt) => (
                                         <button
                                             key={opt.value}
@@ -383,6 +418,25 @@ const Holdings = () => {
                                 </div>
                             )}
                         </div>
+                    </div>
+
+                    {/* Account Filter Dropdown */}
+                    <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 rounded-md px-3 py-1.5">
+                        <Filter className="h-4 w-4 text-slate-400" />
+                        <span className="text-sm text-slate-400">Filter:</span>
+                        <select
+                            value={filterAccount}
+                            onChange={(e) => setFilterAccount(e.target.value)}
+                            className="bg-transparent text-sm font-medium text-slate-200 outline-none cursor-pointer hover:text-white"
+                        >
+                            <option value="All" className="bg-slate-800">All Accounts</option>
+                            <option value="Default" className="bg-slate-800">Default</option>
+                            {accounts.map(acc => {
+                                const val = typeof acc === 'object' ? acc.name : acc;
+                                if (val === 'Default') return null;
+                                return <option key={val} value={val} className="bg-slate-800">{val}</option>;
+                            })}
+                        </select>
                     </div>
                 </div>
             </div>
@@ -409,6 +463,42 @@ const Holdings = () => {
                 </button>
             </div>
 
+            {/* Summary Metrics Bar */}
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg">
+                    <p className="text-slate-400 text-xs uppercase font-bold tracking-wider">SIPs</p>
+                    <p className="text-xl font-semibold text-slate-200 mt-1">{summaryMetrics.sipCount}</p>
+                </div>
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg">
+                    <p className="text-slate-400 text-xs uppercase font-bold tracking-wider">Lumpsums</p>
+                    <p className="text-xl font-semibold text-slate-200 mt-1">{summaryMetrics.lumpsumCount}</p>
+                </div>
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg">
+                    <p className="text-slate-400 text-xs uppercase font-bold tracking-wider">Invested</p>
+                    <p className="text-xl font-semibold text-slate-200 mt-1">₹{summaryMetrics.totalInvested.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+                </div>
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg">
+                    <p className="text-slate-400 text-xs uppercase font-bold tracking-wider">
+                        {activeTab === 'sold' ? 'Exited Value' : 'Current'}
+                    </p>
+                    <p className="text-xl font-semibold text-blue-400 mt-1">₹{summaryMetrics.totalCurrent.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+                </div>
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg">
+                    <p className="text-slate-400 text-xs uppercase font-bold tracking-wider">
+                        {activeTab === 'sold' ? 'Realized P&L' : 'Return'}
+                    </p>
+                    <p className={`text-xl font-semibold mt-1 ${summaryMetrics.absReturn >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                        {summaryMetrics.absReturn >= 0 ? '+' : '-'}₹{Math.abs(summaryMetrics.absReturn).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                    </p>
+                </div>
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg">
+                    <p className="text-slate-400 text-xs uppercase font-bold tracking-wider">Return %</p>
+                    <p className={`text-xl font-semibold mt-1 ${summaryMetrics.returnPerc >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                        {summaryMetrics.returnPerc >= 0 ? '+' : ''}{summaryMetrics.returnPerc.toFixed(2)}%
+                    </p>
+                </div>
+            </div>
+
             <div className="rounded-xl border border-slate-800 bg-slate-900 text-slate-50 shadow overflow-hidden flex flex-col">
                 <div className="relative w-full overflow-auto flex-1">
                     <table className="w-full caption-bottom text-sm">
@@ -424,12 +514,10 @@ const Holdings = () => {
                                 </th>
                                 {activeTab === 'active' ? (
                                     <>
-                                        <th onClick={() => handleSort('last_invested_date')} className="h-12 px-4 text-left align-middle font-medium text-slate-400 cursor-pointer hover:text-slate-200">
+                                        <th className="h-12 px-4 text-left align-middle font-medium text-slate-400">
                                             <div className="flex items-center gap-1">
-                                                Inv. Date
-                                                {sortConfig.key === 'last_invested_date' && (
-                                                    sortConfig.direction === 'asc' ? <ArrowUp className="h-4 w-4 text-blue-500" /> : <ArrowDown className="h-4 w-4 text-blue-500" />
-                                                )}
+                                                Date
+                                                <Info className="h-3.5 w-3.5 text-slate-500" />
                                             </div>
                                         </th>
                                         <th className="h-12 px-4 text-left align-middle font-medium text-slate-400">
@@ -460,28 +548,14 @@ const Holdings = () => {
                                                 </div>
                                             </div>
                                         </th>
-                                        <th onClick={() => handleSort('redemption_date')} className="h-12 px-4 text-left align-middle font-medium text-slate-400 cursor-pointer hover:text-slate-200">
-                                            <div className="flex items-center gap-1">
-                                                End Date
-                                                {sortConfig.key === 'redemption_date' && (
-                                                    sortConfig.direction === 'asc' ? <ArrowUp className="h-4 w-4 text-blue-500" /> : <ArrowDown className="h-4 w-4 text-blue-500" />
-                                                )}
+                                        <th className="h-12 px-4 text-right align-middle font-medium text-slate-400 cursor-pointer hover:text-slate-200">
+                                            <div className="flex items-center justify-end gap-1">
+                                                Amount
                                             </div>
                                         </th>
-                                        <th onClick={() => handleSort('invested_amount')} className="h-12 px-4 text-right align-middle font-medium text-slate-400 cursor-pointer hover:text-slate-200">
+                                        <th className="h-12 px-4 text-right align-middle font-medium text-slate-400 cursor-pointer hover:text-slate-200">
                                             <div className="flex items-center justify-end gap-1">
-                                                Invested
-                                                {sortConfig.key === 'invested_amount' && (
-                                                    sortConfig.direction === 'asc' ? <ArrowUp className="h-4 w-4 text-blue-500" /> : <ArrowDown className="h-4 w-4 text-blue-500" />
-                                                )}
-                                            </div>
-                                        </th>
-                                        <th onClick={() => handleSort('current_value')} className="h-12 px-4 text-right align-middle font-medium text-slate-400 cursor-pointer hover:text-slate-200">
-                                            <div className="flex items-center justify-end gap-1">
-                                                Current
-                                                {sortConfig.key === 'current_value' && (
-                                                    sortConfig.direction === 'asc' ? <ArrowUp className="h-4 w-4 text-blue-500" /> : <ArrowDown className="h-4 w-4 text-blue-500" />
-                                                )}
+                                                Returns
                                             </div>
                                         </th>
                                         <th onClick={() => handleSort('max_52w')} className="h-12 px-4 text-center align-middle font-medium text-slate-400 cursor-pointer hover:text-slate-200">
@@ -574,7 +648,7 @@ const Holdings = () => {
                                         onClick={() => toggleGroup(groupName)}
                                         className="bg-slate-900/80 cursor-pointer hover:bg-slate-800 border-b border-slate-800 select-none"
                                     >
-                                        <td colSpan={activeTab === 'active' ? 4 : 2} className="p-4 align-middle font-semibold text-blue-400">
+                                        <td colSpan={activeTab === 'active' ? 3 : 2} className="p-4 align-middle font-semibold text-blue-400">
                                             <div className="flex items-center gap-2">
                                                 {expandedGroups.has(groupName) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                                                 {groupName}
@@ -585,18 +659,21 @@ const Holdings = () => {
                                         </td>
                                         {activeTab === 'active' && (
                                             <>
-                                                <td className="p-4 align-middle text-right font-bold text-slate-300">
-                                                    ₹{group.totalInvested.toLocaleString()}
+                                                <td className="p-4 align-middle text-right font-bold text-sm">
+                                                    <div className="text-slate-300"><PrivacyGuard>₹{group.totalInvested.toLocaleString()}</PrivacyGuard></div>
+                                                    <div className="text-slate-400 text-xs"><PrivacyGuard>₹{group.totalCurrent.toLocaleString(undefined, { maximumFractionDigits: 0 })}</PrivacyGuard></div>
                                                 </td>
-                                                <td className="p-4 align-middle text-right font-bold text-slate-200">
-                                                    <div className="flex flex-col items-end gap-1">
-                                                        <span>₹{group.totalCurrent.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                                                        <span className={`text-xs font-normal px-2 py-0.5 rounded-full bg-slate-800 ${group.returnPercentage >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                                            {group.returnPercentage >= 0 ? '+' : ''}{group.returnPercentage.toFixed(1)}%
-                                                        </span>
+                                                <td className="p-4 align-middle text-right font-bold">
+                                                    <div className={`${(group.totalCurrent - group.totalInvested) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                                        <PrivacyGuard>
+                                                            {(group.totalCurrent - group.totalInvested) >= 0 ? '+' : ''}₹{Math.abs(group.totalCurrent - group.totalInvested).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                                        </PrivacyGuard>
                                                     </div>
+                                                    <span className={`text-xs font-normal px-2 py-0.5 rounded-full bg-slate-800 ${group.returnPercentage >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                                        {group.returnPercentage >= 0 ? '+' : ''}{group.returnPercentage.toFixed(1)}%
+                                                    </span>
                                                 </td>
-                                                <td className="p-4 align-middle text-right"></td>
+                                                <td className="p-4 align-middle text-right"></td> {/* 52W */}
                                                 {showXIRR && <td className="p-4 align-middle text-right"></td>}
                                             </>
                                         )}
@@ -604,14 +681,14 @@ const Holdings = () => {
                                             <>
                                                 <td className="p-4 align-middle text-right"></td> {/* For Exit Summary */}
                                                 <td className="p-4 align-middle text-right font-bold text-slate-300 text-xs">
-                                                    <div>Inv: ₹{(group.totalGrossInvested || 0).toLocaleString()}</div>
-                                                    <div>Ext: ₹{(group.totalRealizedValue || 0).toLocaleString()}</div>
+                                                    <div>Inv: <PrivacyGuard>₹{(group.totalGrossInvested || 0).toLocaleString()}</PrivacyGuard></div>
+                                                    <div>Ext: <PrivacyGuard>₹{(group.totalRealizedValue || 0).toLocaleString()}</PrivacyGuard></div>
                                                 </td>
                                                 <td className="p-4 align-middle text-right"></td> {/* For Duration */}
                                                 <td className="p-4 align-middle text-right"></td> {/* For Term */}
                                                 <td className="p-4 align-middle text-right font-bold text-slate-200">
                                                     <div className="flex flex-col items-end gap-1">
-                                                        <span>₹{group.totalRealizedPnl.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                                        <PrivacyGuard><span>₹{group.totalRealizedPnl.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span></PrivacyGuard>
                                                         <span className={`text-xs font-normal px-2 py-0.5 rounded-full bg-slate-800 ${group.totalRealizedPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                                                             {group.totalRealizedPnl >= 0 ? '+' : ''}{group.totalRealizedPnlPercentage.toFixed(1)}%
                                                         </span>
@@ -639,7 +716,7 @@ const Holdings = () => {
 
                             {(!portfolio?.holdings || portfolio.holdings.length === 0) && (
                                 <tr>
-                                    <td colSpan={showXIRR ? 9 : 8} className="p-4 text-center text-slate-400">No holdings found. Start investing!</td>
+                                    <td colSpan={showXIRR ? 8 : 7} className="p-4 text-center text-slate-400">No holdings found. Start investing!</td>
                                 </tr>
                             )}
                         </tbody>
@@ -726,8 +803,8 @@ const Row = ({ item, isChild = false, showXIRR, onRedeem, activeTab = 'active', 
                     )}
                     <span className="text-xs text-slate-400">
                         {activeTab === 'active'
-                            ? `Units: ${item.total_units.toFixed(2)} | Avg NAV: ₹${item.average_nav.toFixed(1)} | Cur NAV: ₹${item.current_nav.toFixed(2)}`
-                            : `Units: ${(item.total_units_bought || 0).toFixed(2)} | Avg NAV: ₹${(item.avg_buy_nav || 0).toFixed(1)} | Cur NAV: ₹${item.current_nav.toFixed(2)}`
+                            ? <span>Units: <PrivacyGuard>{item.total_units.toFixed(2)}</PrivacyGuard> | Avg NAV: <PrivacyGuard>₹{item.average_nav.toFixed(1)}</PrivacyGuard> | Cur NAV: <PrivacyGuard>₹{item.current_nav.toFixed(2)}</PrivacyGuard> <span className="text-slate-500">| {item.account_name || 'Default'}</span></span>
+                            : <span>Units: <PrivacyGuard>{(item.total_units_bought || 0).toFixed(2)}</PrivacyGuard> | Avg NAV: <PrivacyGuard>₹{(item.avg_buy_nav || 0).toFixed(1)}</PrivacyGuard> | Cur NAV: <PrivacyGuard>₹{item.current_nav.toFixed(2)}</PrivacyGuard> <span className="text-slate-500">| {item.account_name || 'Default'}</span></span>
                         }
                     </span>
                 </div>
@@ -737,7 +814,14 @@ const Row = ({ item, isChild = false, showXIRR, onRedeem, activeTab = 'active', 
         {activeTab === 'active' ? (
             <>
                 <td className="p-4 align-middle text-left text-sm text-slate-300">
-                    {item.last_invested_date ? new Date(item.last_invested_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '-'}
+                    <div className="flex flex-col gap-1">
+                        <div className="text-slate-300">
+                            {item.last_invested_date ? <PrivacyGuard>{new Date(item.last_invested_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</PrivacyGuard> : '-'}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                            {item.redemption_date ? <PrivacyGuard>{new Date(item.redemption_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</PrivacyGuard> : '-'}
+                        </div>
+                    </div>
                 </td>
                 <td className="p-4 align-middle text-left text-sm text-slate-300">
                     <div className="flex flex-col gap-0.5">
@@ -776,22 +860,26 @@ const Row = ({ item, isChild = false, showXIRR, onRedeem, activeTab = 'active', 
                             return (
                                 <>
                                     <span className="text-[10px] text-slate-100 uppercase">
-                                        Idle: {years}Y.{months}M.{days}D
+                                        <PrivacyGuard>Idle: {years}Y.{months}M.{days}D</PrivacyGuard>
                                     </span>
                                     <span className={`text-[10px] uppercase ${redeemStatus === 'N' ? 'text-red-400' : 'text-emerald-400'}`}>
-                                        Redeem: {redeemStatus}
+                                        <PrivacyGuard>Redeem: {redeemStatus}</PrivacyGuard>
                                     </span>
                                 </>
                             );
                         })()}
                     </div>
                 </td>
-                <td className="p-4 align-middle text-left text-sm text-slate-300">
-                    {item.redemption_date ? new Date(item.redemption_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '-'}
+                <td className="p-4 align-middle text-right font-medium text-sm">
+                    <div className="text-slate-300"><PrivacyGuard>Inv: ₹{item.invested_amount.toLocaleString()}</PrivacyGuard></div>
+                    <div className="text-slate-400 text-xs"><PrivacyGuard>Cur: ₹{item.current_value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</PrivacyGuard></div>
                 </td>
-                <td className="p-4 align-middle text-right font-medium">₹{item.invested_amount.toLocaleString()}</td>
                 <td className="p-4 align-middle text-right font-medium">
-                    <div>₹{item.current_value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                    <div className={`${(item.current_value - item.invested_amount) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                        <PrivacyGuard>
+                            {(item.current_value - item.invested_amount) >= 0 ? '+' : ''}₹{Math.abs(item.current_value - item.invested_amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        </PrivacyGuard>
+                    </div>
                     <div className={`text-xs ${item.return_percentage >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                         {item.return_percentage >= 0 ? '+' : ''}{item.return_percentage.toFixed(1)}%
                     </div>

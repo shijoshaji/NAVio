@@ -37,6 +37,63 @@ try:
                     pass
             print("Migration complete.")
             
+    # Auto-migration for account_name column in investments
+    if 'investments' in inspector.get_table_names():
+        columns = [c['name'] for c in inspector.get_columns('investments')]
+        if 'account_name' not in columns:
+            print("Migrating DB: Adding account_name column to investments...")
+            with engine.connect() as connection:
+                connection.execute(text("ALTER TABLE investments ADD COLUMN account_name VARCHAR DEFAULT 'Default'"))
+                try:
+                    connection.commit()
+                except:
+                    pass
+            print("Migration complete.")
+            
+    # Auto-migration for account_name column in portfolio
+    if 'portfolio' in inspector.get_table_names():
+        columns = [c['name'] for c in inspector.get_columns('portfolio')]
+        if 'account_name' not in columns:
+            print("Migrating DB: Adding account_name column to portfolio...")
+            with engine.connect() as connection:
+                connection.execute(text("ALTER TABLE portfolio ADD COLUMN account_name VARCHAR DEFAULT 'Default'"))
+                try:
+                    connection.commit()
+                except:
+                    pass
+            print("Migration complete.")
+            
+    # Auto-migration: Populate accounts table from existing data
+    if 'accounts' in inspector.get_table_names():
+        with Session(engine) as session:
+            # 1. Ensure 'Default' exists
+            if not session.query(models.Account).filter(models.Account.name == 'Default').first():
+                session.add(models.Account(name='Default'))
+                print("Added Default account.")
+            
+            # 2. Sync from Investments
+            if 'investments' in inspector.get_table_names():
+                inv_accounts = session.query(models.Investment.account_name).distinct().all()
+                for (acc_name,) in inv_accounts:
+                    if acc_name and not session.query(models.Account).filter(models.Account.name == acc_name).first():
+                         session.add(models.Account(name=acc_name))
+                         print(f"Migrated account: {acc_name}")
+
+            # 3. Sync from Portfolio
+            if 'portfolio' in inspector.get_table_names():
+                port_accounts = session.query(models.Portfolio.account_name).distinct().all()
+                for (acc_name,) in port_accounts:
+                    if acc_name and not session.query(models.Account).filter(models.Account.name == acc_name).first():
+                         session.add(models.Account(name=acc_name))
+                         print(f"Migrated account: {acc_name}")
+            
+            try:
+                session.commit()
+                print("Account population complete.")
+            except Exception as e:
+                print(f"Account population failed: {e}")
+                session.rollback()
+            
 except Exception as e:
     print(f"Migration check failed: {e}")
 
@@ -76,6 +133,64 @@ class InvestmentBase(BaseModel):
     purchase_nav: float
     purchase_date: date
     holding_period: Optional[float] = None
+    account_name: Optional[str] = "Default"
+
+class SIPMandateBase(BaseModel):
+    scheme_code: str
+    account_name: Optional[str] = "Default"
+    sip_amount: float
+    start_date: date
+    duration_years: float
+    status: Optional[str] = "ACTIVE"
+
+@app.post("/api/sips/mandates")
+def create_sip_mandate(mandate: SIPMandateBase, db: Session = Depends(get_db)):
+    db_mandate = models.SIPMandate(
+        scheme_code=mandate.scheme_code,
+        account_name=mandate.account_name,
+        sip_amount=mandate.sip_amount,
+        start_date=mandate.start_date,
+        duration_years=mandate.duration_years,
+        status=mandate.status
+    )
+    db.add(db_mandate)
+    db.commit()
+    db.refresh(db_mandate)
+    return db_mandate
+
+@app.get("/api/sips/mandates")
+def get_sip_mandates(active_only: bool = False, db: Session = Depends(get_db)):
+    from sqlalchemy.orm import joinedload
+    query = db.query(models.SIPMandate).options(joinedload(models.SIPMandate.scheme))
+    if active_only:
+        query = query.filter(models.SIPMandate.status == 'ACTIVE')
+    return query.all()
+
+@app.put("/api/sips/mandates/{mandate_id}")
+def update_sip_mandate(mandate_id: int, mandate: SIPMandateBase, db: Session = Depends(get_db)):
+    db_mandate = db.query(models.SIPMandate).filter(models.SIPMandate.id == mandate_id).first()
+    if not db_mandate:
+        raise HTTPException(status_code=404, detail="Mandate not found")
+    
+    db_mandate.scheme_code = mandate.scheme_code
+    db_mandate.account_name = mandate.account_name
+    db_mandate.sip_amount = mandate.sip_amount
+    db_mandate.start_date = mandate.start_date
+    db_mandate.duration_years = mandate.duration_years
+    db_mandate.status = mandate.status
+    
+    db.commit()
+    db.refresh(db_mandate)
+    return db_mandate
+
+@app.delete("/api/sips/mandates/{mandate_id}")
+def delete_sip_mandate(mandate_id: int, db: Session = Depends(get_db)):
+    db_mandate = db.query(models.SIPMandate).filter(models.SIPMandate.id == mandate_id).first()
+    if not db_mandate:
+        raise HTTPException(status_code=404, detail="Mandate not found")
+    db.delete(db_mandate)
+    db.commit()
+    return {"message": "Mandate deleted"}
 
 class RedeemRequest(BaseModel):
     scheme_code: str
@@ -83,6 +198,7 @@ class RedeemRequest(BaseModel):
     nav: float
     date: date
     remarks: Optional[str] = None
+    account_name: Optional[str] = "Default"
 
 class WatchlistBase(BaseModel):
     scheme_code: str
@@ -92,6 +208,9 @@ class WatchlistBase(BaseModel):
     invested_amount: Optional[float] = 0.0
 
 class GroupBase(BaseModel):
+    name: str
+
+class AccountBase(BaseModel):
     name: str
 
 @app.post("/api/watchlist")
@@ -108,6 +227,14 @@ def add_to_watchlist(item: WatchlistBase, db: Session = Depends(get_db)):
 class SellItemRequest(BaseModel):
     sold_nav: float
     sold_date: date
+
+class RedeemRequest(BaseModel):
+    scheme_code: str
+    units: float
+    nav: float
+    date: date
+    remarks: Optional[str] = None
+    account_name: Optional[str] = "Default"
 
 @app.delete("/api/watchlist/item/{item_id}")
 def delete_watchlist_item(item_id: int, db: Session = Depends(get_db)):
@@ -164,6 +291,92 @@ def get_portfolio(type: Optional[str] = None, db: Session = Depends(get_db)):
     """Get portfolio summary with current valuation"""
     return portfolio.get_portfolio_summary(db, filter_type=type)
 
+@app.get("/api/accounts")
+def get_accounts(db: Session = Depends(get_db)):
+    """Get list of defined accounts with item counts."""
+    accounts = db.query(models.Account).order_by(models.Account.name).all()
+    result = []
+    for acc in accounts:
+        # Count investments (active tracking entries)
+        inv_count = db.query(models.Investment).filter(models.Investment.account_name == acc.name).count()
+        # Count portfolio items (history/aggregated)
+        port_count = db.query(models.Portfolio).filter(models.Portfolio.account_name == acc.name).count()
+        
+        result.append({
+            "id": acc.id, 
+            "name": acc.name, 
+            "item_count": inv_count, # Only block on Active Investments
+            "history_count": port_count
+        })
+    return result
+
+@app.post("/api/accounts")
+def create_account(account: AccountBase, db: Session = Depends(get_db)):
+    """Create a new account"""
+    existing = db.query(models.Account).filter(models.Account.name == account.name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Account already exists")
+    
+    new_account = models.Account(name=account.name)
+    db.add(new_account)
+    db.commit()
+    db.refresh(new_account)
+    return {"id": new_account.id, "name": new_account.name, "item_count": 0, "history_count": 0}
+
+@app.put("/api/accounts/{account_id}")
+def update_account(account_id: int, account: AccountBase, db: Session = Depends(get_db)):
+    """Rename an account and cascade changes to investments."""
+    db_account = db.query(models.Account).filter(models.Account.id == account_id).first()
+    if not db_account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    # Cascade rename
+    old_name = db_account.name
+    new_name = account.name
+    
+    if old_name != new_name:
+        # Check if new name exists
+        if db.query(models.Account).filter(models.Account.name == new_name).first():
+            raise HTTPException(status_code=400, detail="Account name already exists")
+            
+        db_account.name = new_name
+        
+        # Update Investments
+        db.query(models.Investment).filter(models.Investment.account_name == old_name).update({models.Investment.account_name: new_name})
+        
+        # Update Portfolio
+        db.query(models.Portfolio).filter(models.Portfolio.account_name == old_name).update({models.Portfolio.account_name: new_name})
+        
+    db.commit()
+    db.refresh(db_account)
+    
+    # helper count
+    inv_count = db.query(models.Investment).filter(models.Investment.account_name == new_name).count()
+    return {"id": db_account.id, "name": db_account.name, "item_count": inv_count}
+
+@app.delete("/api/accounts/{account_id}")
+def delete_account(account_id: int, db: Session = Depends(get_db)):
+    """Delete an account. Block if ACTIVE investments. Move History to Default."""
+    db_account = db.query(models.Account).filter(models.Account.id == account_id).first()
+    if not db_account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    if db_account.name == 'Default':
+        raise HTTPException(status_code=400, detail="Cannot delete Default account")
+
+    # Check for ACTIVE investments
+    inv_count = db.query(models.Investment).filter(models.Investment.account_name == db_account.name).count()
+    
+    if inv_count > 0:
+        raise HTTPException(status_code=400, detail=f"Cannot delete account '{db_account.name}' because it has {inv_count} active investments.")
+        
+    # If only history exists (portfolio items), move them to Default so they are not orphaned
+    db.query(models.Portfolio).filter(models.Portfolio.account_name == db_account.name).update({models.Portfolio.account_name: 'Default'})
+    
+    db.delete(db_account)
+    db.commit()
+    return {"message": "Account deleted successfully"}
+
 @app.delete("/api/portfolio/scheme/{scheme_code}")
 def delete_scheme_history(scheme_code: str, db: Session = Depends(get_db)):
     """Permanently delete all transaction history for a scheme"""
@@ -182,7 +395,8 @@ def add_investment(investment: InvestmentBase, db: Session = Depends(get_db)):
         amount=investment.amount,
         purchase_nav=investment.purchase_nav,
         purchase_date=investment.purchase_date,
-        holding_period=investment.holding_period
+        holding_period=investment.holding_period,
+        account_name=investment.account_name
     )
 
 @app.post("/api/redeem")
@@ -194,7 +408,8 @@ def redeem_investment(redemption: RedeemRequest, db: Session = Depends(get_db)):
         units=redemption.units,
         nav=redemption.nav,
         date=redemption.date,
-        remarks=redemption.remarks
+        remarks=redemption.remarks,
+        account_name=redemption.account_name
     )
 
 @app.get("/api/investments")
@@ -204,8 +419,11 @@ def get_investments(type: Optional[str] = None, active_only: bool = False, db: S
     
     if active_only:
         # Join with Portfolio to check if scheme is active (units > 0)
-        query = query.join(models.Portfolio, models.Investment.scheme_code == models.Portfolio.scheme_code)\
-                     .filter(models.Portfolio.total_units > 0)
+        query = query.join(
+            models.Portfolio, 
+            (models.Investment.scheme_code == models.Portfolio.scheme_code) & 
+            (models.Investment.account_name == models.Portfolio.account_name)
+        ).filter(models.Portfolio.total_units >= 0.01)
 
     if type:
         query = query.filter(models.Investment.type == type)
@@ -230,11 +448,30 @@ def update_investment(investment_id: int, investment: InvestmentBase, db: Sessio
         amount=investment.amount,
         purchase_nav=investment.purchase_nav,
         purchase_date=investment.purchase_date,
-        holding_period=investment.holding_period
+        holding_period=investment.holding_period,
+        account_name=investment.account_name
     )
     if not updated_investment:
         raise HTTPException(status_code=404, detail="Investment not found")
     return updated_investment
+
+@app.post("/api/redeem")
+def redeem_investment(request: RedeemRequest, db: Session = Depends(get_db)):
+    """Redeem (Sell) units from an investment"""
+    # Calculate negative amount for redemption
+    # add_investment calculates units = amount / nav
+    # So if we want -ve units, we need -ve amount
+    amount = -1 * (request.units * request.nav)
+    
+    return portfolio.add_investment(
+        db,
+        scheme_code=request.scheme_code,
+        invest_type="REDEMPTION",
+        amount=amount,
+        purchase_nav=request.nav,
+        purchase_date=request.date,
+        account_name=request.account_name
+    )
 
 @app.get("/api/schemes/search")
 def search_schemes(query: str = "", limit: int = 50, db: Session = Depends(get_db)):

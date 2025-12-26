@@ -27,6 +27,7 @@ class Investment(Base):
     purchase_nav = Column(Float)
     purchase_date = Column(Date)
     holding_period = Column(Float, nullable=True)
+    account_name = Column(String, nullable=True, default="Default")
     
     scheme = relationship("Scheme")
 
@@ -39,6 +40,7 @@ class Portfolio(Base):
     total_units = Column(Float, default=0.0)
     average_nav = Column(Float, default=0.0)
     invested_amount = Column(Float, default=0.0)
+    account_name = Column(String, nullable=True, default="Default")
 
     scheme = relationship("Scheme")
 
@@ -86,3 +88,22 @@ class NAVHistory(Base):
         UniqueConstraint('scheme_code', 'date', name='uq_scheme_date_history'),
     )
 
+
+class Account(Base):
+    __tablename__ = "accounts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True)
+
+class SIPMandate(Base):
+    __tablename__ = "sip_mandates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    scheme_code = Column(String, ForeignKey("schemes.scheme_code"))
+    account_name = Column(String, nullable=True, default="Default")
+    sip_amount = Column(Float)
+    start_date = Column(Date)
+    duration_years = Column(Float)
+    status = Column(String, default="ACTIVE") # ACTIVE, PAUSED, COMPLETED
+    
+    scheme = relationship("Scheme")

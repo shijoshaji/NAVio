@@ -3,7 +3,7 @@ from models import Investment, Portfolio, Scheme, Watchlist, WatchlistGroup, NAV
 from datetime import date, timedelta
 from sqlalchemy import func
 
-def add_investment(db: Session, scheme_code: str, invest_type: str, amount: float, purchase_nav: float, purchase_date: date, holding_period: float = None):
+def add_investment(db: Session, scheme_code: str, invest_type: str, amount: float, purchase_nav: float, purchase_date: date, holding_period: float = None, account_name: str = "Default"):
     """
     Adds a new investment (SIP or Lumpsum) and updates the portfolio.
     """
@@ -17,12 +17,16 @@ def add_investment(db: Session, scheme_code: str, invest_type: str, amount: floa
         units=units,
         purchase_nav=purchase_nav,
         purchase_date=purchase_date,
-        holding_period=holding_period
+        holding_period=holding_period,
+        account_name=account_name
     )
     db.add(new_investment)
     
     # 2. Update Portfolio (Aggregated Holdings)
-    portfolio_item = db.query(Portfolio).filter(Portfolio.scheme_code == scheme_code).first()
+    portfolio_item = db.query(Portfolio).filter(
+        Portfolio.scheme_code == scheme_code,
+        Portfolio.account_name == account_name
+    ).first()
     
     if portfolio_item:
         # Weighted Average NAV Calculation
@@ -36,7 +40,8 @@ def add_investment(db: Session, scheme_code: str, invest_type: str, amount: floa
             scheme_code=scheme_code,
             total_units=units,
             average_nav=purchase_nav,
-            invested_amount=amount
+            invested_amount=amount,
+            account_name=account_name
         )
         db.add(new_portfolio_item)
     
@@ -119,14 +124,19 @@ def get_portfolio_summary(db: Session, filter_type: str = None):
     
     investments = query.all()
     
-    # 2. Group by Scheme
+    # 2. Group by Scheme AND Account
     inv_map = {}
     scheme_codes = set()
     
     for inv in investments:
-        if inv.scheme_code not in inv_map:
-            inv_map[inv.scheme_code] = []
-        inv_map[inv.scheme_code].append(inv)
+        # Use a tuple key: (scheme_code, account_name)
+        # account_name might be None in DB, handle gracefully
+        acc = inv.account_name if inv.account_name else "Default"
+        key = (inv.scheme_code, acc)
+        
+        if key not in inv_map:
+            inv_map[key] = []
+        inv_map[key].append(inv)
         scheme_codes.add(inv.scheme_code)
         
     # 3. Fetch Schemes Details
@@ -139,7 +149,7 @@ def get_portfolio_summary(db: Session, filter_type: str = None):
     total_realized_pnl = 0.0
     global_cashflows = []
     
-    for scheme_code, raw_txns in inv_map.items():
+    for (scheme_code, account_name), raw_txns in inv_map.items():
         scheme = scheme_map.get(scheme_code)
         if not scheme: continue 
         
@@ -202,7 +212,7 @@ def get_portfolio_summary(db: Session, filter_type: str = None):
         # But we need to aggregate P&L globally.
         
         # We will continue to calculate, but flag for filtering
-        is_active = curr_units > 0.0001
+        is_active = curr_units >= 0.01
         
         # Average NAV
         avg_nav = curr_invested / curr_units if curr_units > 0 else 0
@@ -313,7 +323,8 @@ def get_portfolio_summary(db: Session, filter_type: str = None):
             "total_units_bought": total_units_bought,
             "avg_buy_nav": avg_buy_nav,
             "gross_invested_amount": gross_invested_amount,
-            "tax_status": tax_status
+            "tax_status": tax_status,
+            "account_name": account_name
         })
         
         total_invested += curr_invested
@@ -352,7 +363,7 @@ def delete_scheme_history(db: Session, scheme_code: str):
     db.commit()
     return True
 
-def redeem_investment(db: Session, scheme_code: str, units: float, nav: float, date: date, remarks: str = None):
+def redeem_investment(db: Session, scheme_code: str, units: float, nav: float, date: date, remarks: str = None, account_name: str = "Default"):
     # 1. Add Investment Entry (Negative Units/Amount)
     # Amount is negative (Outflow)
     amount = -(units * nav)
@@ -364,7 +375,8 @@ def redeem_investment(db: Session, scheme_code: str, units: float, nav: float, d
         units=-units, # Negative units for redemption
         purchase_nav=nav,
         purchase_date=date,
-        holding_period=None
+        holding_period=None,
+        account_name=account_name
     )
     
     db.add(new_redemption)
@@ -634,7 +646,10 @@ def delete_investment(db: Session, investment_id: int):
         return False
     
     # Update Portfolio - Reverse impact
-    portfolio_item = db.query(Portfolio).filter(Portfolio.scheme_code == investment.scheme_code).first()
+    portfolio_item = db.query(Portfolio).filter(
+        Portfolio.scheme_code == investment.scheme_code,
+        Portfolio.account_name == investment.account_name
+    ).first()
     
     if portfolio_item:
         portfolio_item.total_units -= investment.units
@@ -653,7 +668,7 @@ def delete_investment(db: Session, investment_id: int):
     db.commit()
     return True
 
-def update_investment(db: Session, investment_id: int, scheme_code: str, invest_type: str, amount: float, purchase_nav: float, purchase_date: date, holding_period: float = None):
+def update_investment(db: Session, investment_id: int, scheme_code: str, invest_type: str, amount: float, purchase_nav: float, purchase_date: date, holding_period: float = None, account_name: str = "Default"):
     """
     Updates an investment by reversing old one and adding new one.
     """
@@ -663,8 +678,11 @@ def update_investment(db: Session, investment_id: int, scheme_code: str, invest_
         return None
         
     # 2. Revert Old Portfolio Impact
-    # Note: Using investment.scheme_code from DB, in case user is changing scheme_code (unlikely but possible)
-    old_portfolio_item = db.query(Portfolio).filter(Portfolio.scheme_code == investment.scheme_code).first()
+    old_portfolio_item = db.query(Portfolio).filter(
+        Portfolio.scheme_code == investment.scheme_code,
+        Portfolio.account_name == investment.account_name
+    ).first()
+    
     if old_portfolio_item:
         old_portfolio_item.total_units -= investment.units
         old_portfolio_item.invested_amount -= investment.amount
@@ -683,12 +701,17 @@ def update_investment(db: Session, investment_id: int, scheme_code: str, invest_
     investment.purchase_nav = purchase_nav
     investment.purchase_date = purchase_date
     investment.holding_period = holding_period
+    investment.account_name = account_name
     
     new_units = amount / purchase_nav
     investment.units = new_units
     
     # 4. Apply New Portfolio Impact
-    new_portfolio_item = db.query(Portfolio).filter(Portfolio.scheme_code == scheme_code).first()
+    new_portfolio_item = db.query(Portfolio).filter(
+        Portfolio.scheme_code == scheme_code,
+        Portfolio.account_name == account_name
+    ).first()
+    
     if new_portfolio_item:
         new_total_units = new_portfolio_item.total_units + new_units
         new_total_invested = new_portfolio_item.invested_amount + amount
@@ -698,12 +721,13 @@ def update_investment(db: Session, investment_id: int, scheme_code: str, invest_
         # Weighted Average NAV
         new_portfolio_item.average_nav = new_total_invested / new_total_units
     else:
-        # Create new if didn't exist (e.g. if user changed scheme to a new one)
+        # Create new if didn't exist 
         new_portfolio_item = Portfolio(
             scheme_code=scheme_code,
             total_units=new_units,
             average_nav=purchase_nav,
-            invested_amount=amount
+            invested_amount=amount,
+            account_name=account_name
         )
         db.add(new_portfolio_item)
         

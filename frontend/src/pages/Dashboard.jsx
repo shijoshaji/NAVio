@@ -4,8 +4,30 @@ import { RefreshCw, TrendingUp, IndianRupee, PieChart as PieChartIcon, Clock, Pe
 import { generatePortfolioInsights } from '../utils/portfolioIQ';
 import { toast } from 'react-hot-toast';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend } from 'recharts';
+import PrivacyGuard from '../components/PrivacyGuard';
+import { usePrivacy } from '../context/PrivacyContext';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+
+
+// Custom Tooltip for Privacy
+const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+        const data = payload[0].payload;
+        return (
+            <div className="bg-slate-900 border border-slate-700 p-2 rounded shadow-lg z-50">
+                <p className="text-slate-200 text-xs font-semibold mb-1">{data.name.split('(')[0].trim()}</p>
+                <p className="text-blue-400 text-xs font-mono">
+                    <PrivacyGuard>₹{data.value.toLocaleString()}</PrivacyGuard>
+                </p>
+                <p className="text-slate-400 text-[10px] mt-1">
+                    {data.name.match(/\(([^)]+)\)/)?.[1] || ''}
+                </p>
+            </div>
+        );
+    }
+    return null;
+};
 
 const Dashboard = () => {
     const [portfolio, setPortfolio] = useState(null);
@@ -259,7 +281,7 @@ const Dashboard = () => {
                         <h3 className="tracking-tight text-sm font-medium">Total Invested</h3>
                         <IndianRupee className="h-4 w-4 text-slate-400" />
                     </div>
-                    <div className="text-2xl font-bold">₹{portfolio?.total_invested?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || '0'}</div>
+                    <div className="text-2xl font-bold"><PrivacyGuard>₹{portfolio?.total_invested?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || '0'}</PrivacyGuard></div>
                 </div>
                 <div className="rounded-xl border border-slate-800 bg-slate-900 text-slate-50 shadow p-6">
                     <div className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -267,7 +289,7 @@ const Dashboard = () => {
                         <TrendingUp className="h-4 w-4 text-slate-400" />
                     </div>
                     <div className={`text-2xl font-bold ${portfolio?.total_gain >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        ₹{portfolio?.total_current_value?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || '0'}
+                        <PrivacyGuard>₹{portfolio?.total_current_value?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || '0'}</PrivacyGuard>
                     </div>
                 </div>
                 <div className="rounded-xl border border-slate-800 bg-slate-900 text-slate-50 shadow p-6">
@@ -276,9 +298,11 @@ const Dashboard = () => {
                         <PieChartIcon className="h-4 w-4 text-slate-400" />
                     </div>
                     <div className={`text-2xl font-bold ${portfolio?.total_gain >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {portfolio?.total_gain >= 0 ? '+' : ''}₹{portfolio?.total_gain?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || '0'}
+                        <PrivacyGuard>
+                            {portfolio?.total_gain >= 0 ? '+' : ''}₹{portfolio?.total_gain?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || '0'}
+                        </PrivacyGuard>
                         <span className="text-sm font-medium opacity-80 ml-1">
-                            ({((portfolio?.total_gain / portfolio?.total_invested) * 100).toFixed(2)}%)
+                            <PrivacyGuard>({((portfolio?.total_gain / portfolio?.total_invested) * 100).toFixed(2)}%)</PrivacyGuard>
                         </span>
                     </div>
                 </div>
@@ -288,7 +312,7 @@ const Dashboard = () => {
                         <IndianRupee className="h-4 w-4 text-slate-400" />
                     </div>
                     <div className={`text-2xl font-bold ${portfolio?.total_realized_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {portfolio?.total_realized_pnl >= 0 ? '+' : ''}₹{portfolio?.total_realized_pnl?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || '0'}
+                        <PrivacyGuard>{portfolio?.total_realized_pnl >= 0 ? '+' : ''}₹{portfolio?.total_realized_pnl?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || '0'}</PrivacyGuard>
                     </div>
                 </div>
                 <div className="rounded-xl border border-slate-800 bg-slate-900 text-slate-50 shadow p-6 relative group">
@@ -297,7 +321,7 @@ const Dashboard = () => {
                         <Percent className="h-4 w-4 text-slate-400 cursor-help" />
                     </div>
                     <div className={`text-2xl font-bold ${portfolio?.portfolio_xirr >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {portfolio?.portfolio_xirr?.toFixed(2)}%
+                        <PrivacyGuard>{portfolio?.portfolio_xirr?.toFixed(2)}%</PrivacyGuard>
                     </div>
 
                     {/* XIRR Tooltip */}
@@ -319,7 +343,7 @@ const Dashboard = () => {
                         <Sparkles className="h-5 w-5 text-indigo-400" />
                         <h3 className="text-lg font-bold text-indigo-100">Portfolio IQ</h3>
                         <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-mono font-bold border border-indigo-500/30">
-                            SCORE: {analyzedInsights.score}/100
+                            SCORE: <PrivacyGuard>{analyzedInsights.score}/100</PrivacyGuard>
                         </span>
                     </div>
 
@@ -379,10 +403,7 @@ const Dashboard = () => {
                                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                     ))}
                                 </Pie>
-                                <RechartsTooltip
-                                    formatter={(value) => `₹${value.toLocaleString()}`}
-                                    contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f8fafc' }}
-                                />
+                                <RechartsTooltip content={<CustomTooltip />} />
                                 <Legend
                                     layout="vertical"
                                     verticalAlign="middle"
@@ -419,10 +440,7 @@ const Dashboard = () => {
                                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                     ))}
                                 </Pie>
-                                <RechartsTooltip
-                                    formatter={(value) => `₹${value.toLocaleString()}`}
-                                    contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f8fafc' }}
-                                />
+                                <RechartsTooltip content={<CustomTooltip />} />
                                 <Legend
                                     layout="vertical"
                                     verticalAlign="middle"
@@ -459,10 +477,7 @@ const Dashboard = () => {
                                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                     ))}
                                 </Pie>
-                                <RechartsTooltip
-                                    formatter={(value) => `₹${value.toLocaleString()}`}
-                                    contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f8fafc' }}
-                                />
+                                <RechartsTooltip content={<CustomTooltip />} />
                                 <Legend
                                     layout="vertical"
                                     verticalAlign="middle"

@@ -40,11 +40,22 @@ export const getAMCs = () => api.get('/schemes/amc');
 export const getSchemesByAMC = (amc) => api.get('/schemes', { params: { amc } });
 export const getSyncStatus = () => api.get('/sync-status');
 export const getSchemeByCode = (code) => api.get(`/schemes/code/${code}`);
+// Account Management
+export const getAccounts = () => api.get('/accounts');
+export const addAccount = (name) => api.post('/accounts', { name });
+export const updateAccount = (id, name) => api.put(`/accounts/${id}`, { name });
+export const deleteAccount = (id) => api.delete(`/accounts/${id}`);
 
 export const deleteWatchlistItem = (id) => api.delete(`/watchlist/item/${id}`);
 export const markWatchlistItemSold = (id, data) => api.post(`/watchlist/item/${id}/sell`, data);
 export const updateWatchlistDate = (id, date) => api.patch(`/watchlist/item/${id}/date`, { date });
 export const redeemInvestment = (data) => api.post('/redeem', data);
 export const deleteScheme = (schemeCode) => api.delete(`/portfolio/scheme/${schemeCode}`);
+
+// SIP Mandates
+export const getSipMandates = (activeOnly = true) => api.get('/sips/mandates', { params: { active_only: activeOnly } });
+export const createSipMandate = (data) => api.post('/sips/mandates', data);
+export const updateSipMandate = (id, data) => api.put(`/sips/mandates/${id}`, data);
+export const deleteSipMandate = (id) => api.delete(`/sips/mandates/${id}`);
 
 export default api;

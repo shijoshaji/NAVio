@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, TrendingUp, PiggyBank, List, Menu, X, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
+import { LayoutDashboard, TrendingUp, PiggyBank, List, Menu, X, ChevronLeft, ChevronRight, Eye, Settings as SettingsIcon } from 'lucide-react';
 import navioLogo from '../assets/logo-navio-banner.png';
 import navioicon from '../assets/icon.png';
 import { useState, useEffect } from 'react';
@@ -23,6 +23,7 @@ const Layout = ({ children }) => {
         { name: 'SIP Tracker', href: '/sip', icon: TrendingUp },
         { name: 'Lumpsum', href: '/lumpsum', icon: PiggyBank },
         { name: 'Watchlist', href: '/watchlist', icon: Eye },
+        { name: 'Settings', href: '/settings', icon: SettingsIcon },
     ];
 
     useEffect(() => {
