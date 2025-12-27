@@ -1093,25 +1093,14 @@ const Row = ({ item, isChild = false, showXIRR, onRedeem, activeTab = 'active', 
 
 // Helper for Redeem Status
 const calculateRedeemStatus = (item) => {
-    // 1. Prioritize Backend Target Date (The Plan)
-    if (item.redemption_date) {
-        const today = new Date();
-        const target = new Date(item.redemption_date);
-
-        if (today < target) {
-            // Calculate remaining time for a more helpful "N" status
-            const diffTime = target - today;
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            if (diffDays > 365) return "N"; // Keep it simple "N" if > 1 year
-            return "N";
-        }
-        return "Y";
-    }
+    // 1. Prioritize Backend Target Date (The Plan) -> REMOVED to show Tenure Progress (Year 1, Year 2...)
+    // Users prefer seeing the age of the investment rather than a binary "Not Ready"
+    // if (item.redemption_date) { ... }
 
     // 2. Fallback to original yearly threshold logic for Lumpsums without explicit mandates
-    if (!item.last_invested_date) return "N";
+    if (!item.first_invested_date) return "N";
 
-    const start = new Date(item.last_invested_date);
+    const start = new Date(item.first_invested_date);
     const end = new Date();
     let years = end.getFullYear() - start.getFullYear();
     let months = end.getMonth() - start.getMonth();
