@@ -302,7 +302,7 @@ const LumpsumTracker = () => {
                                             </p>
                                             <p className="text-xs text-slate-400 flex items-center gap-3">
                                                 <span className="flex items-center"><Calendar className="mr-1 h-3 w-3" /> <PrivacyGuard>{inv.purchase_date}</PrivacyGuard></span>
-                                                <span className="flex items-center text-slate-500 bg-slate-800/50 px-1.5 py-0.5 rounded border border-slate-800"><Users className="mr-1 h-3 w-3" /> {inv.account_name || 'Default'}</span>
+                                                <span className="flex items-center text-slate-500 bg-slate-800/50 px-1.5 py-0.5 rounded border border-slate-800"><Users className="mr-1 h-3 w-3" /> <PrivacyGuard>{inv.account_name || 'Default'}</PrivacyGuard></span>
                                             </p>
                                         </div>
                                         <div className="flex items-center gap-4">

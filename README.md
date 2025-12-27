@@ -45,6 +45,13 @@ NAViō is a self-hosted, privacy-focused mutual fund tracking application design
 
 ---
 
+## 🎉 Latest Milestone: v2.0.0
+NAViō has reached a major production-ready milestone!
+-   📝 [**Release Notes v2.0.0**](release-notes/v2.0.0.md) - SIP Lifecycle, Privacy Hardening, and Fiscal Precision.
+-   🎥 [**Visual Walkthrough**](release-notes/walkthrough.md) - See the newest features in action.
+
+---
+
 ## 📚 Documentation
 -   [**Installation & Usage**](Documentation/Installation_Usage.md) - How to run locally, with Docker, or Podman.
 -   [**Functional Overview**](Documentation/Functional_Walkthrough.md) - A guide to the features, dashboard, and smart analysis tools.

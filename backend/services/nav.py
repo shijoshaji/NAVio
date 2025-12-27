@@ -128,6 +128,7 @@ def parse_and_sync_nav_data(db: Session, data: str):
 
         except Exception as e:
             logger.error(f"Error parsing line: {line} - {e}")
+            db.rollback()
             continue
             
     db.commit()
@@ -292,6 +293,7 @@ def fetch_and_update_scheme_metadata(db: Session):
                 data = response.json()
                 meta = data.get("meta", {})
                 fund_house = meta.get("fund_house")
+                category = meta.get("scheme_category")
                 
                 if category or fund_house:
                     scheme = db.query(Scheme).filter(Scheme.scheme_code == str(code)).first()

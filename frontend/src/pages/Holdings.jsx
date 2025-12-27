@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { getPortfolio, redeemInvestment, deleteScheme, getAccounts } from '../services/api';
-import { RefreshCw, ChevronRight, ChevronDown, Layers, ChevronLeft, Info, ArrowUp, ArrowDown, BadgeDollarSign, Trash2, Filter } from 'lucide-react';
+import { RefreshCw, ChevronRight, ChevronDown, Layers, ChevronLeft, Info, ArrowUp, ArrowDown, BadgeDollarSign, Trash2, Filter, ArrowUpDown } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import RedeemModal from '../components/RedeemModal';
 import ConfirmModal from '../components/ConfirmModal';
@@ -19,6 +19,8 @@ const Holdings = () => {
     // Filtering State
     const [accounts, setAccounts] = useState([]);
     const [filterAccount, setFilterAccount] = useState('All');
+    const [filterYear, setFilterYear] = useState('All');
+    const [filterRedeem, setFilterRedeem] = useState('All');
 
     // XIRR Visibility State
     const [showXIRR, setShowXIRR] = useState(false);
@@ -48,7 +50,13 @@ const Holdings = () => {
     // Reset pagination when grouping or filter changes
     useEffect(() => {
         setCurrentPage(1);
-    }, [groupBy, filterAccount]);
+    }, [groupBy, filterAccount, filterYear, filterRedeem]);
+
+    // Reset filters when tab changes
+    useEffect(() => {
+        setFilterYear('All');
+        setFilterRedeem('All');
+    }, [activeTab]);
 
     const handleSort = (key) => {
         let direction = 'asc';
@@ -125,13 +133,31 @@ const Holdings = () => {
         }
     }, [expandAll]);
 
+    // Helper: Calculate Financial Year
+    const getFinancialYear = (dateString) => {
+        if (!dateString) return null;
+        const date = new Date(dateString);
+        const month = date.getMonth(); // 0-11. April is 3.
+        const year = date.getFullYear();
+
+        let fyStart = year;
+        if (month < 3) { // Jan, Feb, Mar belong to previous FY start year
+            fyStart = year - 1;
+        }
+        const fyEnd = (fyStart + 1).toString().slice(-2);
+        return `FY ${fyStart}-${fyEnd}`;
+    };
+
     // Derived Data: Filtered Holdings (Base for both grouping and summary)
     const filteredHoldings = useMemo(() => {
         if (!portfolio?.holdings) return [];
         return portfolio.holdings.filter(item => {
             // Filter based on activeTab (Active vs Sold)
             const isActive = item.total_units > 0;
-            const isSold = item.total_units === 0 && (item.realized_pnl !== 0 || item.realized_value > 0);
+            // Sold tab should include:
+            // 1. Fully sold items (0 units left, but has P&L/Value history)
+            // 2. Partial sales (units > 0, but has realized P&L or realized value from past sales)
+            const isSold = (item.total_units === 0 || item.total_units_sold > 0) && (item.realized_pnl !== 0 || item.realized_value > 0);
 
             if (activeTab === 'active' && !isActive) return false;
             if (activeTab === 'sold' && !isSold) return false;
@@ -140,9 +166,38 @@ const Holdings = () => {
             const itemAccount = item.account_name || 'Default';
             if (filterAccount !== 'All' && itemAccount !== filterAccount) return false;
 
+            // Year Filter Logic (Only for Sold tab) - NOW FINANCIAL YEAR
+            if (activeTab === 'sold' && filterYear !== 'All') {
+                if (!item.last_sell_date) return false;
+                const itemFy = getFinancialYear(item.last_sell_date);
+                if (itemFy !== filterYear) return false;
+            }
+
+            // Redeem Status Filter Logic (Only for Active tab)
+            if (activeTab === 'active' && filterRedeem !== 'All') {
+                const status = calculateRedeemStatus(item);
+                // For filter, we check if it matches the general year or 'N'
+                if (filterRedeem === 'N' && status === 'N') return true;
+                if (filterRedeem === status) return true;
+                return false;
+            }
+
             return true;
         });
-    }, [portfolio, activeTab, filterAccount]);
+    }, [portfolio, activeTab, filterAccount, filterYear, filterRedeem]);
+
+    // Derived Data: Available Years for Sold Tab - NOW FINANCIAL YEAR
+    const availableYears = useMemo(() => {
+        if (!portfolio?.holdings) return [];
+        const years = new Set();
+        portfolio.holdings.forEach(item => {
+            if (item.last_sell_date) {
+                const fy = getFinancialYear(item.last_sell_date);
+                if (fy) years.add(fy);
+            }
+        });
+        return Array.from(years).sort().reverse(); // Sort Descending string (FY 2025... > FY 2024...)
+    }, [portfolio]);
 
     // Derived Data: Summary Metrics
     const summaryMetrics = useMemo(() => {
@@ -438,6 +493,44 @@ const Holdings = () => {
                             })}
                         </select>
                     </div>
+
+                    {/* Redeem Status Filter (Only when activeTab is active) */}
+                    {activeTab === 'active' && (
+                        <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 rounded-md px-3 py-1.5">
+                            <Filter className="h-4 w-4 text-slate-400" />
+                            <span className="text-sm text-slate-400">Redeem:</span>
+                            <select
+                                value={filterRedeem}
+                                onChange={(e) => setFilterRedeem(e.target.value)}
+                                className="bg-transparent text-sm font-medium text-slate-200 outline-none cursor-pointer hover:text-white"
+                            >
+                                <option value="All" className="bg-slate-800">All</option>
+                                <option value="N" className="bg-slate-800 text-red-400">N (&lt;12m)</option>
+                                <option value="Year 1" className="bg-slate-800 text-emerald-400">Year 1</option>
+                                <option value="Year 2" className="bg-slate-800 text-emerald-400">Year 2</option>
+                                <option value="Year 3" className="bg-slate-800 text-emerald-400">Year 3</option>
+                                <option value="Year 4" className="bg-slate-800 text-emerald-400">Year 4</option>
+                                <option value="Year 5+" className="bg-slate-800 text-emerald-400">Year 5+</option>
+                            </select>
+                        </div>
+                    )}
+                    {/* Redeem Year Filter (Only when activeTab is sold) */}
+                    {activeTab === 'sold' && (
+                        <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 rounded-md px-3 py-1.5">
+                            <Filter className="h-4 w-4 text-slate-400" />
+                            <span className="text-sm text-slate-400">Year:</span>
+                            <select
+                                value={filterYear}
+                                onChange={(e) => setFilterYear(e.target.value)}
+                                className="bg-transparent text-sm font-medium text-slate-200 outline-none cursor-pointer hover:text-white"
+                            >
+                                <option value="All" className="bg-slate-800">All Years</option>
+                                {availableYears.map(year => (
+                                    <option key={year} value={year} className="bg-slate-800">{year}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -467,34 +560,34 @@ const Holdings = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                 <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg">
                     <p className="text-slate-400 text-xs uppercase font-bold tracking-wider">SIPs</p>
-                    <p className="text-xl font-semibold text-slate-200 mt-1">{summaryMetrics.sipCount}</p>
+                    <p className="text-xl font-semibold text-slate-200 mt-1"><PrivacyGuard>{summaryMetrics.sipCount}</PrivacyGuard></p>
                 </div>
                 <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg">
                     <p className="text-slate-400 text-xs uppercase font-bold tracking-wider">Lumpsums</p>
-                    <p className="text-xl font-semibold text-slate-200 mt-1">{summaryMetrics.lumpsumCount}</p>
+                    <p className="text-xl font-semibold text-slate-200 mt-1"><PrivacyGuard>{summaryMetrics.lumpsumCount}</PrivacyGuard></p>
                 </div>
                 <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg">
                     <p className="text-slate-400 text-xs uppercase font-bold tracking-wider">Invested</p>
-                    <p className="text-xl font-semibold text-slate-200 mt-1">₹{summaryMetrics.totalInvested.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+                    <p className="text-xl font-semibold text-slate-200 mt-1"><PrivacyGuard>₹{summaryMetrics.totalInvested.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</PrivacyGuard></p>
                 </div>
                 <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg">
                     <p className="text-slate-400 text-xs uppercase font-bold tracking-wider">
                         {activeTab === 'sold' ? 'Exited Value' : 'Current'}
                     </p>
-                    <p className="text-xl font-semibold text-blue-400 mt-1">₹{summaryMetrics.totalCurrent.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+                    <p className="text-xl font-semibold text-blue-400 mt-1"><PrivacyGuard>₹{summaryMetrics.totalCurrent.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</PrivacyGuard></p>
                 </div>
                 <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg">
                     <p className="text-slate-400 text-xs uppercase font-bold tracking-wider">
                         {activeTab === 'sold' ? 'Realized P&L' : 'Return'}
                     </p>
                     <p className={`text-xl font-semibold mt-1 ${summaryMetrics.absReturn >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                        {summaryMetrics.absReturn >= 0 ? '+' : '-'}₹{Math.abs(summaryMetrics.absReturn).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                        <PrivacyGuard>{summaryMetrics.absReturn >= 0 ? '+' : '-'}₹{Math.abs(summaryMetrics.absReturn).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</PrivacyGuard>
                     </p>
                 </div>
                 <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg">
                     <p className="text-slate-400 text-xs uppercase font-bold tracking-wider">Return %</p>
                     <p className={`text-xl font-semibold mt-1 ${summaryMetrics.returnPerc >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                        {summaryMetrics.returnPerc >= 0 ? '+' : ''}{summaryMetrics.returnPerc.toFixed(2)}%
+                        <PrivacyGuard>{summaryMetrics.returnPerc >= 0 ? '+' : ''}{summaryMetrics.returnPerc.toFixed(2)}%</PrivacyGuard>
                     </p>
                 </div>
             </div>
@@ -566,6 +659,14 @@ const Holdings = () => {
                                                 )}
                                             </div>
                                         </th>
+                                        <th onClick={() => handleSort('max_since_invested')} className="h-12 px-4 text-center align-middle font-medium text-slate-400 cursor-pointer hover:text-slate-200">
+                                            <div className="flex items-center justify-center gap-1">
+                                                Since Inv H/L
+                                                {sortConfig.key === 'max_since_invested' && (
+                                                    sortConfig.direction === 'asc' ? <ArrowUp className="h-4 w-4 text-blue-500" /> : <ArrowDown className="h-4 w-4 text-blue-500" />
+                                                )}
+                                            </div>
+                                        </th>
                                         {showXIRR && (
                                             <th onClick={() => handleSort('xirr')} className="h-12 px-4 text-right align-middle font-medium text-slate-400 cursor-pointer hover:text-slate-200">
                                                 <div className="flex items-center justify-end gap-1 group relative w-full">
@@ -603,24 +704,17 @@ const Holdings = () => {
                                     </>
                                 ) : (
                                     <>
-                                        <th className="h-12 px-4 text-left align-middle font-medium text-slate-400 w-[20%] min-w-[200px]">
-                                            Exit Summary
+                                        <th className="px-4 py-3 text-left font-medium text-slate-400">Exit Summary</th>
+                                        <th className="px-4 py-3 text-left font-medium text-slate-400">Amount</th>
+                                        <th className="px-4 py-3 text-center font-medium text-slate-400">Duration</th>
+                                        <th className="px-4 py-3 text-center font-medium text-slate-400">Term</th>
+                                        <th className="px-6 py-4 text-right cursor-pointer group" onClick={() => requestSort('realized_pnl')}>
+                                            <div className="flex items-center justify-end gap-1">
+                                                Realized P&L
+                                                <ArrowUpDown className={`h-3 w-3 transition-opacity ${sortConfig.key === 'realized_pnl' ? 'opacity-100 text-blue-400' : 'opacity-0 group-hover:opacity-50'}`} />
+                                            </div>
                                         </th>
-                                        <th className="h-12 px-4 text-left align-middle font-medium text-slate-400 w-[18%] min-w-[140px]">
-                                            Amount
-                                        </th>
-                                        <th className="h-12 px-4 text-center align-middle font-medium text-slate-400 w-[15%] min-w-[120px]">
-                                            Duration
-                                        </th>
-                                        <th className="h-12 px-4 text-center align-middle font-medium text-slate-400 w-[10%] min-w-[100px]">
-                                            Term
-                                        </th>
-                                        <th className="h-12 px-4 text-right align-middle font-medium text-slate-400 w-[12%] min-w-[100px]">
-                                            Realized P&L
-                                        </th>
-                                        <th className="h-12 px-4 text-center align-middle font-medium text-slate-400 w-[5%] min-w-[60px]">
-                                            Action
-                                        </th>
+                                        <th className="px-4 py-3 text-center font-medium text-slate-400">Action</th>
                                     </>
                                 )}
                             </tr>
@@ -651,7 +745,7 @@ const Holdings = () => {
                                         <td colSpan={activeTab === 'active' ? 3 : 2} className="p-4 align-middle font-semibold text-blue-400">
                                             <div className="flex items-center gap-2">
                                                 {expandedGroups.has(groupName) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                                                {groupName}
+                                                {groupBy === 'account' ? <PrivacyGuard>{groupName}</PrivacyGuard> : groupName}
                                                 <span className="text-xs text-slate-500 font-normal ml-2 bg-slate-800 px-2 py-0.5 rounded-full">
                                                     {group.items.length} Funds
                                                 </span>
@@ -670,10 +764,11 @@ const Holdings = () => {
                                                         </PrivacyGuard>
                                                     </div>
                                                     <span className={`text-xs font-normal px-2 py-0.5 rounded-full bg-slate-800 ${group.returnPercentage >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                                        {group.returnPercentage >= 0 ? '+' : ''}{group.returnPercentage.toFixed(1)}%
+                                                        <PrivacyGuard>{group.returnPercentage >= 0 ? '+' : ''}{group.returnPercentage.toFixed(1)}%</PrivacyGuard>
                                                     </span>
                                                 </td>
                                                 <td className="p-4 align-middle text-right"></td> {/* 52W */}
+                                                <td className="p-4 align-middle text-right"></td> {/* Since Inv */}
                                                 {showXIRR && <td className="p-4 align-middle text-right"></td>}
                                             </>
                                         )}
@@ -690,7 +785,7 @@ const Holdings = () => {
                                                     <div className="flex flex-col items-end gap-1">
                                                         <PrivacyGuard><span>₹{group.totalRealizedPnl.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span></PrivacyGuard>
                                                         <span className={`text-xs font-normal px-2 py-0.5 rounded-full bg-slate-800 ${group.totalRealizedPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                                            {group.totalRealizedPnl >= 0 ? '+' : ''}{group.totalRealizedPnlPercentage.toFixed(1)}%
+                                                            <PrivacyGuard>{group.totalRealizedPnl >= 0 ? '+' : ''}{group.totalRealizedPnlPercentage.toFixed(1)}%</PrivacyGuard>
                                                         </span>
                                                     </div>
                                                 </td>
@@ -793,18 +888,20 @@ const Row = ({ item, isChild = false, showXIRR, onRedeem, activeTab = 'active', 
             )}
             <div className="flex flex-col">
                 <div className="flex items-center gap-2">
-                    <span>{item.scheme_name}</span>
+                    <span><PrivacyGuard>{item.scheme_name}</PrivacyGuard></span>
                 </div>
                 <div className="flex items-center gap-2 mt-1">
                     {item.is_sip && (
-                        <span className="text-[10px] bg-blue-400/20 text-orange-400 px-1.5 py-0.5 rounded font-bold tracking-wide">
-                            SIP
-                        </span>
+                        <PrivacyGuard>
+                            <span className="text-[10px] bg-blue-400/20 text-orange-400 px-1.5 py-0.5 rounded font-bold tracking-wide">
+                                SIP
+                            </span>
+                        </PrivacyGuard>
                     )}
                     <span className="text-xs text-slate-400">
                         {activeTab === 'active'
-                            ? <span>Units: <PrivacyGuard>{item.total_units.toFixed(2)}</PrivacyGuard> | Avg NAV: <PrivacyGuard>₹{item.average_nav.toFixed(1)}</PrivacyGuard> | Cur NAV: <PrivacyGuard>₹{item.current_nav.toFixed(2)}</PrivacyGuard> <span className="text-slate-500">| {item.account_name || 'Default'}</span></span>
-                            : <span>Units: <PrivacyGuard>{(item.total_units_bought || 0).toFixed(2)}</PrivacyGuard> | Avg NAV: <PrivacyGuard>₹{(item.avg_buy_nav || 0).toFixed(1)}</PrivacyGuard> | Cur NAV: <PrivacyGuard>₹{item.current_nav.toFixed(2)}</PrivacyGuard> <span className="text-slate-500">| {item.account_name || 'Default'}</span></span>
+                            ? <span>Units: <PrivacyGuard>{item.total_units.toFixed(2)}</PrivacyGuard> | Avg NAV: <PrivacyGuard>₹{item.average_nav.toFixed(1)}</PrivacyGuard> | Cur NAV: <PrivacyGuard>₹{item.current_nav.toFixed(2)}</PrivacyGuard> <span className="text-slate-500">| <PrivacyGuard>{item.account_name || 'Default'}</PrivacyGuard></span></span>
+                            : <span>Units: <PrivacyGuard>{(item.total_units_bought || 0).toFixed(2)}</PrivacyGuard> | Avg NAV: <PrivacyGuard>₹{(item.avg_buy_nav || 0).toFixed(1)}</PrivacyGuard> | Cur NAV: <PrivacyGuard>₹{item.current_nav.toFixed(2)}</PrivacyGuard> <span className="text-slate-500">| <PrivacyGuard>{item.account_name || 'Default'}</PrivacyGuard></span></span>
                         }
                     </span>
                 </div>
@@ -816,10 +913,12 @@ const Row = ({ item, isChild = false, showXIRR, onRedeem, activeTab = 'active', 
                 <td className="p-4 align-middle text-left text-sm text-slate-300">
                     <div className="flex flex-col gap-1">
                         <div className="text-slate-300">
-                            {item.last_invested_date ? <PrivacyGuard>{new Date(item.last_invested_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</PrivacyGuard> : '-'}
+                            {/* Strategic Start (Mandate/Plan Start) or First Investment */}
+                            {(item.plan_start_date || item.first_invested_date) ? <PrivacyGuard><span className="text-slate-400 text-xs">Start:</span> {new Date(item.plan_start_date || item.first_invested_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</PrivacyGuard> : '-'}
                         </div>
-                        <div className="text-xs text-slate-500">
-                            {item.redemption_date ? <PrivacyGuard>{new Date(item.redemption_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</PrivacyGuard> : '-'}
+                        <div className="text-slate-300">
+                            {/* Strategic Target Exit Date */}
+                            {item.redemption_date ? <PrivacyGuard><span className="text-slate-400 text-xs text-amber-500/80">Target:</span> {new Date(item.redemption_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</PrivacyGuard> : (item.last_invested_date && <PrivacyGuard><span className="text-slate-400 text-xs">Last:</span> {new Date(item.last_invested_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</PrivacyGuard>)}
                         </div>
                     </div>
                 </td>
@@ -829,10 +928,13 @@ const Row = ({ item, isChild = false, showXIRR, onRedeem, activeTab = 'active', 
                             <span className="text-[10px] text-slate-100 uppercase">Plan: {item.holding_period} yrs</span>
                         )}
                         {(() => {
-                            if (!item.last_invested_date) return <span>-</span>;
+                            // Use first_invested_date for duration calculation too
+                            if (!item.first_invested_date) return <span>-</span>;
 
-                            const start = new Date(item.last_invested_date);
+                            const start = new Date(item.first_invested_date);
                             const end = new Date();
+
+                            // Calculate Idle Time for Display
                             let years = end.getFullYear() - start.getFullYear();
                             let months = end.getMonth() - start.getMonth();
                             let days = end.getDate() - start.getDate();
@@ -847,23 +949,16 @@ const Row = ({ item, isChild = false, showXIRR, onRedeem, activeTab = 'active', 
                                 months += 12;
                             }
 
-                            const totalMonths = (years * 12) + months + (days / 30); // Approx
-
-                            let redeemStatus = "N";
-                            if (totalMonths < 12) redeemStatus = "N";
-                            else if (totalMonths <= 24) redeemStatus = "Year 1";
-                            else if (totalMonths <= 36) redeemStatus = "Year 2";
-                            else if (totalMonths <= 48) redeemStatus = "Year 3";
-                            else if (totalMonths <= 60) redeemStatus = "Year 4";
-                            else redeemStatus = "Year 5+";
+                            const redeemStatusFull = calculateRedeemStatus(item);
+                            const isReady = redeemStatusFull !== 'N';
 
                             return (
                                 <>
                                     <span className="text-[10px] text-slate-100 uppercase">
-                                        <PrivacyGuard>Idle: {years}Y.{months}M.{days}D</PrivacyGuard>
+                                        Idle: {years}Y.{months}M.{days}D
                                     </span>
-                                    <span className={`text-[10px] uppercase ${redeemStatus === 'N' ? 'text-red-400' : 'text-emerald-400'}`}>
-                                        <PrivacyGuard>Redeem: {redeemStatus}</PrivacyGuard>
+                                    <span className={`text-[10px] uppercase ${isReady ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        Redeem: {redeemStatusFull}
                                     </span>
                                 </>
                             );
@@ -881,7 +976,7 @@ const Row = ({ item, isChild = false, showXIRR, onRedeem, activeTab = 'active', 
                         </PrivacyGuard>
                     </div>
                     <div className={`text-xs ${item.return_percentage >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                        {item.return_percentage >= 0 ? '+' : ''}{item.return_percentage.toFixed(1)}%
+                        <PrivacyGuard>{item.return_percentage >= 0 ? '+' : ''}{item.return_percentage.toFixed(1)}%</PrivacyGuard>
                     </div>
                 </td>
                 <td className="p-4 align-middle text-center text-xs text-slate-300">
@@ -894,6 +989,20 @@ const Row = ({ item, isChild = false, showXIRR, onRedeem, activeTab = 'active', 
                             <span className="">
                                 ₹{item.max_52w.toFixed(1)}
                                 {item.max_52w_date && <span className="text-[10px] text-slate-500 ml-1">({new Date(item.max_52w_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })})</span>}
+                            </span>
+                        </div>
+                    ) : '-'}
+                </td>
+                <td className="p-4 align-middle text-center text-xs text-slate-300">
+                    {item.min_since_invested && item.max_since_invested ? (
+                        <div className="flex flex-col gap-1 items-center">
+                            <span className="">
+                                ₹{item.min_since_invested.toFixed(1)}
+                                {item.min_since_invested_date && <span className="text-[10px] text-slate-500 ml-1">({new Date(item.min_since_invested_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })})</span>}
+                            </span>
+                            <span className="">
+                                ₹{item.max_since_invested.toFixed(1)}
+                                {item.max_since_invested_date && <span className="text-[10px] text-slate-500 ml-1">({new Date(item.max_since_invested_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })})</span>}
                             </span>
                         </div>
                     ) : '-'}
@@ -981,5 +1090,51 @@ const Row = ({ item, isChild = false, showXIRR, onRedeem, activeTab = 'active', 
         )}
     </tr>
 );
+
+// Helper for Redeem Status
+const calculateRedeemStatus = (item) => {
+    // 1. Prioritize Backend Target Date (The Plan)
+    if (item.redemption_date) {
+        const today = new Date();
+        const target = new Date(item.redemption_date);
+
+        if (today < target) {
+            // Calculate remaining time for a more helpful "N" status
+            const diffTime = target - today;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            if (diffDays > 365) return "N"; // Keep it simple "N" if > 1 year
+            return "N";
+        }
+        return "Y";
+    }
+
+    // 2. Fallback to original yearly threshold logic for Lumpsums without explicit mandates
+    if (!item.last_invested_date) return "N";
+
+    const start = new Date(item.last_invested_date);
+    const end = new Date();
+    let years = end.getFullYear() - start.getFullYear();
+    let months = end.getMonth() - start.getMonth();
+    let days = end.getDate() - start.getDate();
+
+    if (days < 0) {
+        months--;
+        const prevMonth = new Date(end.getFullYear(), end.getMonth(), 0);
+        days += prevMonth.getDate();
+    }
+    if (months < 0) {
+        years--;
+        months += 12;
+    }
+
+    const totalMonths = (years * 12) + months + (days / 30); // Approx
+
+    if (totalMonths < 12) return "N";
+    if (totalMonths <= 24) return "Year 1";
+    if (totalMonths <= 36) return "Year 2";
+    if (totalMonths <= 48) return "Year 3";
+    if (totalMonths <= 60) return "Year 4";
+    return "Year 5+";
+};
 
 export default Holdings;

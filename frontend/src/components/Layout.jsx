@@ -1,9 +1,9 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, TrendingUp, PiggyBank, List, Menu, X, ChevronLeft, ChevronRight, Eye, Settings as SettingsIcon } from 'lucide-react';
+import { LayoutDashboard, TrendingUp, PiggyBank, List, Menu, X, ChevronLeft, ChevronRight, Eye, Settings as SettingsIcon, FileText } from 'lucide-react';
 import navioLogo from '../assets/logo-navio-banner.png';
 import navioicon from '../assets/icon.png';
 import { useState, useEffect } from 'react';
-import { syncNav } from '../services/api';
+import { syncNav, getSystemVersion } from '../services/api';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { Toaster, toast } from 'react-hot-toast';
@@ -15,6 +15,8 @@ function cn(...inputs) {
 const Layout = ({ children }) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [isCollapsed, setIsCollapsed] = useState(false);
+    const [appVersion, setAppVersion] = useState('');
+    const [lastLogin, setLastLogin] = useState('');
     const location = useLocation();
 
     const navigation = [
@@ -24,9 +26,11 @@ const Layout = ({ children }) => {
         { name: 'Lumpsum', href: '/lumpsum', icon: PiggyBank },
         { name: 'Watchlist', href: '/watchlist', icon: Eye },
         { name: 'Settings', href: '/settings', icon: SettingsIcon },
+        { name: 'Reports', href: '/reports', icon: FileText },
     ];
 
     useEffect(() => {
+        // 1. Auto-Sync NAV
         const performAutoSync = async () => {
             const now = new Date();
             const today = now.toLocaleDateString('en-CA'); // YYYY-MM-DD format
@@ -51,6 +55,30 @@ const Layout = ({ children }) => {
         };
 
         performAutoSync();
+
+        // 2. Fetch Version
+        const fetchVersion = async () => {
+            try {
+                const { data } = await getSystemVersion();
+                if (data.version) setAppVersion(data.version);
+            } catch (err) {
+                console.error("Failed to fetch version", err);
+            }
+        };
+        fetchVersion();
+
+        // 3. Handle Last Login
+        const storedLogin = localStorage.getItem('last_login_timestamp');
+        if (storedLogin) {
+            setLastLogin(new Date(storedLogin).toLocaleDateString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric'
+            }));
+        } else {
+            setLastLogin('First Login');
+        }
+        // Update to now
+        localStorage.setItem('last_login_timestamp', new Date().toISOString());
+
     }, []);
 
     return (
@@ -150,17 +178,25 @@ const Layout = ({ children }) => {
 
                 <div className={cn("p-4 border-t border-slate-800 shrink-0", isCollapsed && "flex justify-center")}>
                     {!isCollapsed ? (
-                        <p className="text-xs text-slate-500">
-                            🎯 App created by{' '}
-                            <a
-                                href="https://bio.link/shijoshaji"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-cyan-400 hover:text-cyan-300 transition-colors"
-                            >
-                                Shijo Shaji
-                            </a>
-                        </p>
+                        <div className="space-y-2">
+                            <div className="flex justify-between items-center text-[10px] text-slate-500 uppercase tracking-wider font-semibold">
+                                <span className="text-cyan-500">{appVersion || '...'}</span>
+                                <span className="text-cyan-500">{lastLogin}</span>
+                            </div>
+                            <br />
+                            <p className="text-xs text-slate-500 tracking-wider ">
+                                🎯 App created by{' '}
+                                <a
+                                    href="https://bio.link/shijoshaji"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-cyan-400 hover:text-cyan-300 transition-colors"
+                                >
+                                    Shijo Shaji
+                                </a>
+                            </p>
+                        </div>
+
                     ) : (
                         <span className="text-xs text-slate-600 font-bold">©</span>
                     )}

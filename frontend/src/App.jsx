@@ -3,6 +3,7 @@ import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Holdings from './pages/Holdings';
 import SipTracker from './pages/SipTracker';
+import Reports from './pages/Reports';
 
 import LumpsumTracker from './pages/LumpsumTracker';
 import Watchlist from './pages/Watchlist';
@@ -22,6 +23,7 @@ function App() {
             <Route path="/holdings" element={<Holdings />} />
             <Route path="/sip" element={<SipTracker />} />
             <Route path="/lumpsum" element={<LumpsumTracker />} />
+            <Route path="/reports" element={<Reports />} />
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>

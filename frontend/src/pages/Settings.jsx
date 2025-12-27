@@ -4,6 +4,7 @@ import { Eye, EyeOff, Shield, Users, Plus, Pencil, Trash2, X, Check, AlertTriang
 import { getAccounts, addAccount, updateAccount, deleteAccount } from '../services/api';
 import { toast } from 'react-hot-toast';
 import ConfirmModal from '../components/ConfirmModal';
+import PrivacyGuard from '../components/PrivacyGuard';
 
 const Settings = () => {
     const { isPrivacyMode, togglePrivacyMode } = usePrivacy();
@@ -196,9 +197,9 @@ const Settings = () => {
                                             <>
                                                 <div className="flex items-center gap-2">
                                                     <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-400">
-                                                        {(acc.name || acc).charAt(0).toUpperCase()}
+                                                        <PrivacyGuard>{(acc.name || acc).charAt(0).toUpperCase()}</PrivacyGuard>
                                                     </div>
-                                                    <span className="font-medium text-slate-200">{accName}</span>
+                                                    <span className="font-medium text-slate-200"><PrivacyGuard>{accName}</PrivacyGuard></span>
                                                 </div>
 
                                                 {/* Default account usually cannot be deleted/edited easily or needs checks */}

@@ -29,21 +29,48 @@ def add_investment(db: Session, scheme_code: str, invest_type: str, amount: floa
     ).first()
     
     if portfolio_item:
-        # Weighted Average NAV Calculation
-        total_units = portfolio_item.total_units + units
-        total_invested = portfolio_item.invested_amount + amount
-        portfolio_item.average_nav = total_invested / total_units
-        portfolio_item.total_units = total_units
-        portfolio_item.invested_amount = total_invested
+        if units < 0:
+            # REDEMPTION Logic
+            # 1. Calculate Cost of Goods Sold (COGS) based on Average Cost
+            # We reduce invested_amount proportionally, so Average NAV remains constant
+            
+            # Avoid cases where we sell more than we have (though frontend blocks this)
+            units_to_reduce = abs(units)
+            if units_to_reduce > portfolio_item.total_units:
+                 units_to_reduce = portfolio_item.total_units
+
+            reduce_invested = units_to_reduce * portfolio_item.average_nav
+            
+            new_total_units = portfolio_item.total_units - units_to_reduce
+            new_invested_amount = portfolio_item.invested_amount - reduce_invested
+            
+            if new_total_units < 1e-6: # Float Zero check
+                portfolio_item.total_units = 0.0
+                portfolio_item.invested_amount = 0.0
+                portfolio_item.average_nav = 0.0
+            else:
+                portfolio_item.total_units = new_total_units
+                portfolio_item.invested_amount = new_invested_amount
+                # average_nav remains same
+                
+        else:
+            # INVESTMENT Logic (Weighted Average)
+            total_units = portfolio_item.total_units + units
+            total_invested = portfolio_item.invested_amount + amount
+            portfolio_item.average_nav = total_invested / total_units
+            portfolio_item.total_units = total_units
+            portfolio_item.invested_amount = total_invested
     else:
-        new_portfolio_item = Portfolio(
-            scheme_code=scheme_code,
-            total_units=units,
-            average_nav=purchase_nav,
-            invested_amount=amount,
-            account_name=account_name
-        )
-        db.add(new_portfolio_item)
+        # New Entry (Ensure positive units)
+        if units > 0:
+            new_portfolio_item = Portfolio(
+                scheme_code=scheme_code,
+                total_units=units,
+                average_nav=purchase_nav,
+                invested_amount=amount,
+                account_name=account_name
+            )
+            db.add(new_portfolio_item)
     
     db.commit()
     db.refresh(new_investment)
@@ -142,6 +169,15 @@ def get_portfolio_summary(db: Session, filter_type: str = None):
     # 3. Fetch Schemes Details
     schemes = db.query(Scheme).filter(Scheme.scheme_code.in_(scheme_codes)).all()
     scheme_map = {s.scheme_code: s for s in schemes}
+    
+    # 4. Fetch SIP Mandates (for accurate Start Date and Duration)
+    from models import SIPMandate
+    sip_mandates = db.query(SIPMandate).all()
+    sip_map = {}
+    for m in sip_mandates:
+        # Use tuple key: (scheme_code, account_name)
+        acc = m.account_name if m.account_name else "Default"
+        sip_map[(m.scheme_code, acc)] = m
 
     summary = []
     total_invested = 0
@@ -264,14 +300,29 @@ def get_portfolio_summary(db: Session, filter_type: str = None):
         last_invested_date = last_inv.purchase_date
         holding_period = last_inv.holding_period
         
+        # Check if any transaction is currently of type SIP
+        is_sip = any(i.type == 'SIP' for i in raw_txns)
+
+        # Baseline for Plan/Redemption Calculation
+        sip_mandate = sip_map.get((scheme_code, account_name))
+        
+        # Default Plan Baseline (Start of Plan)
+        plan_start_date = first_invested_date
+        
+        if sip_mandate:
+            # ALWAYS prioritize Mandate Start Date for the Strategic Plan
+            # This ensures consistency with the SIP Tracker entry
+            plan_start_date = sip_mandate.start_date
+            
+            if sip_mandate.duration_years:
+                holding_period = sip_mandate.duration_years
+
+        # Calculate Strategic Target Date
         redemption_date = None
-        if last_invested_date and holding_period:
+        if plan_start_date and holding_period:
             # Approximation: 365.25 days per year
             days = int(holding_period * 365.25)
-            redemption_date = last_invested_date + timedelta(days=days)
-            
-        # Check if any transaction is SIP
-        is_sip = any(i.type == 'SIP' for i in raw_txns)
+            redemption_date = plan_start_date + timedelta(days=days)
         
         # 52-Week High/Low Calculation
         one_year_ago = date.today() - timedelta(days=365)
@@ -290,6 +341,38 @@ def get_portfolio_summary(db: Session, filter_type: str = None):
         
         min_52w_date = low_52_row.date if low_52_row else None
         max_52w_date = high_52_row.date if high_52_row else None
+
+        # Calculate "Since Invested" High/Low (History >= First Invested Date)
+        min_since_invested = current_nav
+        max_since_invested = current_nav
+        min_since_invested_date = None
+        max_since_invested_date = None
+
+        if first_invested_date:
+            query_since = db.query(NAVHistory).filter(
+                NAVHistory.scheme_code == scheme_code,
+                NAVHistory.date >= first_invested_date
+            )
+            
+            high_since_row = query_since.order_by(NAVHistory.net_asset_value.desc()).first()
+            low_since_row = query_since.order_by(NAVHistory.net_asset_value.asc()).first()
+            
+            min_since_invested = low_since_row.net_asset_value if low_since_row else current_nav
+            max_since_invested = high_since_row.net_asset_value if high_since_row else current_nav
+            
+            min_since_invested_date = low_since_row.date if low_since_row else None
+            max_since_invested_date = high_since_row.date if high_since_row else None
+
+            # Fallback checks against current NAV logic (similar to watchlist)
+            if current_nav > max_since_invested:
+                max_since_invested = current_nav
+                max_since_invested_date = date.today()
+            if current_nav < min_since_invested and min_since_invested > 0:
+                 min_since_invested = current_nav
+                 min_since_invested_date = date.today()
+            elif min_since_invested == 0:
+                 min_since_invested = current_nav
+                 min_since_invested_date = date.today()
         
         summary.append({
             "scheme_code": scheme_code,
@@ -306,6 +389,7 @@ def get_portfolio_summary(db: Session, filter_type: str = None):
             "xirr": xirr_val,
             "last_invested_date": last_invested_date,
             "first_invested_date": first_invested_date,
+            "plan_start_date": plan_start_date,
             "last_sell_date": last_sell_date,
             "holding_period": holding_period,
             "redemption_date": redemption_date,
@@ -316,6 +400,10 @@ def get_portfolio_summary(db: Session, filter_type: str = None):
             "max_52w_date": max_52w_date,
             "min_52w_date": min_52w_date,
             "max_52w_date": max_52w_date,
+            "min_since_invested": min_since_invested,
+            "max_since_invested": max_since_invested,
+            "min_since_invested_date": min_since_invested_date,
+            "max_since_invested_date": max_since_invested_date,
             "realized_pnl": scheme_realized_pnl,
             "realized_value": scheme_realized_value,
             "total_units_sold": total_units_sold,

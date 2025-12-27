@@ -409,6 +409,7 @@ const Dashboard = () => {
                                     verticalAlign="middle"
                                     align="right"
                                     wrapperStyle={{ fontSize: '10px' }}
+                                    formatter={(value) => <PrivacyGuard>{value}</PrivacyGuard>}
                                     payload={assetData.map((item, index) => ({
                                         id: item.name,
                                         type: 'square',
@@ -446,6 +447,7 @@ const Dashboard = () => {
                                     verticalAlign="middle"
                                     align="right"
                                     wrapperStyle={{ fontSize: '10px' }}
+                                    formatter={(value) => <PrivacyGuard>{value}</PrivacyGuard>}
                                     payload={sectorData.map((item, index) => ({
                                         id: item.name,
                                         type: 'square',
@@ -483,6 +485,7 @@ const Dashboard = () => {
                                     verticalAlign="middle"
                                     align="right"
                                     wrapperStyle={{ fontSize: '10px' }}
+                                    formatter={(value) => <PrivacyGuard>{value}</PrivacyGuard>}
                                     payload={amcData.map((item, index) => ({
                                         id: item.name,
                                         type: 'square',

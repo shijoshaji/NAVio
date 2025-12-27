@@ -188,9 +188,60 @@ def delete_sip_mandate(mandate_id: int, db: Session = Depends(get_db)):
     db_mandate = db.query(models.SIPMandate).filter(models.SIPMandate.id == mandate_id).first()
     if not db_mandate:
         raise HTTPException(status_code=404, detail="Mandate not found")
+        
+    # Hard Delete: Remove all historical SIP investments for this strategy
+    # to clean up the portfolio stats
+    related_investments = db.query(models.Investment).filter(
+        models.Investment.scheme_code == db_mandate.scheme_code,
+        models.Investment.account_name == db_mandate.account_name,
+        models.Investment.type == 'SIP'
+    ).all()
+    
+    count = 0
+    for inv in related_investments:
+        portfolio.delete_investment(db, inv.id)
+        count += 1
+        
     db.delete(db_mandate)
     db.commit()
-    return {"message": "Mandate deleted"}
+    return {"message": f"Mandate and {count} historical transactions deleted"}
+
+class ConvertSipRequest(BaseModel):
+    start_date: date
+    duration_years: float
+
+@app.post("/api/sips/mandates/{mandate_id}/convert")
+def convert_sip_to_lumpsum(mandate_id: int, request: ConvertSipRequest, db: Session = Depends(get_db)):
+    """
+    Stops the SIP mandate and converts all its historical 'SIP' 
+    investments to 'LUMPSUM' with a new defined plan.
+    """
+    db_mandate = db.query(models.SIPMandate).filter(models.SIPMandate.id == mandate_id).first()
+    if not db_mandate:
+        raise HTTPException(status_code=404, detail="Mandate not found")
+
+    # 1. Update Mandate Status and plan metadata (New Plan Baseline)
+    db_mandate.status = 'COMPLETED'
+    db_mandate.start_date = request.start_date
+    db_mandate.duration_years = request.duration_years
+
+    # 2. Update all historical investments for this strategy
+    # Set type to LUMPSUM, update the holding_period plan, AND RESET purchase_date to new start_date
+    updated_count = db.query(models.Investment).filter(
+        models.Investment.scheme_code == db_mandate.scheme_code,
+        models.Investment.account_name == db_mandate.account_name,
+        models.Investment.type == 'SIP'
+    ).update({
+        models.Investment.type: 'LUMPSUM',
+        models.Investment.holding_period: request.duration_years,
+        models.Investment.purchase_date: request.start_date
+    }, synchronize_session=False)
+
+    db.commit()
+    return {
+        "message": f"SIP converted to Lumpsum. Strategy stopped and {updated_count} transactions updated.",
+        "updated_transactions": updated_count
+    }
 
 class RedeemRequest(BaseModel):
     scheme_code: str
@@ -593,3 +644,36 @@ def get_scheme_stats(scheme_code: str, db: Session = Depends(get_db)):
         "low_52w": min(navs),
         "current_nav": scheme.net_asset_value if scheme else 0
     }
+@app.get("/api/system/version")
+def get_system_version():
+    try:
+        import os
+        import re
+        
+        release_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'release-notes')
+        if not os.path.exists(release_dir):
+            return {"version": "Unknown"}
+            
+        files = [f for f in os.listdir(release_dir) if f.endswith('.md') and f.startswith('v')]
+        if not files:
+            return {"version": "Unknown"}
+            
+        # Parse versions
+        versions = []
+        for f in files:
+            # Extract just the version part v1.2.3.md -> 1.2.3
+            match = re.search(r'v(\d+\.\d+\.\d+)', f)
+            if match:
+                versions.append(match.group(1))
+                
+        if not versions:
+            return {"version": "Unknown"}
+            
+        # Sort versions semantically
+        versions.sort(key=lambda s: [int(u) for u in s.split('.')])
+        latest_version = f"v{versions[-1]}"
+        
+        return {"version": latest_version}
+    except Exception as e:
+        print(f"Error fetching version: {e}")
+        return {"version": "Unknown"}

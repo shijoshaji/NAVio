@@ -57,5 +57,9 @@ export const getSipMandates = (activeOnly = true) => api.get('/sips/mandates', {
 export const createSipMandate = (data) => api.post('/sips/mandates', data);
 export const updateSipMandate = (id, data) => api.put(`/sips/mandates/${id}`, data);
 export const deleteSipMandate = (id) => api.delete(`/sips/mandates/${id}`);
+export const convertSipToLumpsum = (id, data) => api.post(`/sips/mandates/${id}/convert`, data);
+
+// System
+export const getSystemVersion = () => api.get('/system/version');
 
 export default api;
